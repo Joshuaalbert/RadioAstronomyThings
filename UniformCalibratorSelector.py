@@ -18,28 +18,30 @@ import time
 
 from astropy.coordinates import SkyCoord
 #Minimize Uniformity
-def NU(arg):#cals,x,y,numClusters):
-	cals = arg[0]
-	subarg = arg[1]
-	x = subarg[0]
-	y = subarg[1]
-	numClusters = subarg[2]
-	if numClusters == 1:
+def NU(arg):
+	'''L2 non-uniformity of the spacings between the calibrators. See Albert 2016.
+	arg is a nest tuple for multiprocessing. This could be sped up definitely by precomputing spacings, 
+	essentially getting rid of the nest while loops.'''
+	cals = arg[0]#idicies of calibrators to calculate over
+	subarg = arg[1]#nest tuple
+	x = subarg[0]#ra of all calibrators
+	y = subarg[1]#dec of all calibrators
+	numClusters = subarg[2]#number of calibrators (I suppose I could have used len(cals))
+	if numClusters == 1:#otherwise you get divide by zero
 		nonuni = numClusters**2/(numClusters**4*(numClusters**2 - 2*numClusters + 3)**2/4.)
-		print "NU:",nonuni
+		#print "NU:",nonuni
 		return nonuni
 
-	#get sampling size
+	#get nyquist sampling size
 	maxU = 0.
 	maxV = 0.
 	i = 0
 	while i < numClusters:
-		ic = cals[i]#Index of cali
+		ic = cals[i]#Index of calibrator
 		j = 0
 		while j < numClusters:
 			jc = cals[j]#Index of cal_j
 			#print x[ic] - x[jc],y[ic] - y[jc]
-
 			maxU = max(np.abs(x[ic] - x[jc]),maxU)
 			maxV = max(np.abs(y[ic] - y[jc]),maxV)
 			j += 1
@@ -48,6 +50,7 @@ def NU(arg):#cals,x,y,numClusters):
 	dV_ = 2./maxV
 	vecU_ = np.linspace(-numClusters*dU_,numClusters*dU_,2*numClusters+1)
 	vecV_ = np.linspace(-numClusters*dV_,numClusters*dV_,2*numClusters+1)
+	#S_uv defined in Albert 2016.
 	S_uv = np.ones([np.size(vecU_),np.size(vecV_)])*numClusters**2
 	U_,V_ = np.meshgrid(vecU_,vecV_)
 	ip = 0
@@ -62,6 +65,7 @@ def NU(arg):#cals,x,y,numClusters):
 				j = 0
 				while j < jp:
 					jc = cals[j]
+					#was too lazy to efficiently code this loop, precomputing things may be possible
 					S_uv += 2.*np.cos((x[ic]-x[jc] - x[ipc]+x[jpc])*U_ + (y[ic]-y[jc] - y[ipc]+y[jpc])*V_)
 					j += 1
 				i += 1
@@ -74,9 +78,16 @@ def NU(arg):#cals,x,y,numClusters):
 	return nonuni
 
 def chooseGroupSize(K,ncpu=1,timeFactor=1.,maxTime=None,minGroupSize=5):
-	'''Chooses the optimal group size to search for uniform calibrators that maximizes group size but minimizes permutations to search'''
+	'''Chooses the optimal group size to search for uniform calibrators that maximizes group size, and search depth 
+	but performs within the required time.
+	K - number of calibrators to search for
+	ncpu - number of threads that can be run
+	timeFactor - to convert complexity to time (I calibrated on Leiden Paracluster)
+		Calibrated as for big enough groupSize0,searchDepth0,
+		timeFactor = time(groupSize0,searchDepth0)[seconds]*/computations(groupSize0,searchDepth0)/ncpu
+	maxTime - time in minutes to let it search
+	minGroupSize - have at least 5 per searchGroup'''
 	n = [2,3,4]
-	initGroupSize = 15#good one? it's fast at least
 	groupSize = 1#general
 	if maxTime is None:
 		maxTime = np.inf
