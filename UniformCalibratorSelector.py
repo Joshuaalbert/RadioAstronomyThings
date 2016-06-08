@@ -77,16 +77,16 @@ def NU(arg):
 	#print "NU:",nonuni
 	return nonuni
 
-def chooseGroupSize(K,ncpu=1,timeFactor=1.,maxTime=None,minGroupSize=5):
+def chooseGroupSize(K,ncpu=1,timeFactor=32*11.7/3.17e6,maxTime=None,minGroupSize=5,plot=False):
 	'''Chooses the optimal group size to search for uniform calibrators that maximizes group size, and search depth 
 	but performs within the required time.
 	K - number of calibrators to search for
 	ncpu - number of threads that can be run
 	timeFactor - to convert complexity to time (I calibrated on Leiden Paracluster)
-		Calibrated as for big enough groupSize0,searchDepth0,
-		timeFactor = time(groupSize0,searchDepth0)[seconds]*/computations(groupSize0,searchDepth0)/ncpu
-	maxTime - time in minutes to let it search
-	minGroupSize - have at least 5 per searchGroup'''
+		Calibrated as for big enough groupSize0,searchDepth0 as Ncpu*time(groupSize0,searchDepth0)[seconds]/computations(groupSize0,searchDepth0)
+	maxTime - time in seconds to let it search
+	minGroupSize - have at least 5 per searchGroup
+	plot - (false) if true will plot results'''
 	n = [2,3,4]
 	groupSize = 1#general
 	if maxTime is None:
@@ -120,8 +120,12 @@ def chooseGroupSize(K,ncpu=1,timeFactor=1.,maxTime=None,minGroupSize=5):
 	maxInd = np.argmax(G)
 	resG = G[maxInd]
 	resN = np.max(N[G==resG])
-	plt.scatter(G_,C_,c=N_)
-	plt.show()
+	if plot:
+		plt.scatter(G_,C_,c=N_)
+		plt.xlabel('GroupSize')
+		plt.ylabel('Est. ComputeTime (seconds)')
+		plt.colorbar(label='SearchDepth')
+		plt.show()
 	print "Search size and depth:",resG,resN
 	return resG,resN
 
@@ -129,7 +133,7 @@ def make_directions_file(fitsfile,facetfile='factor_directions.txt',xc=None,yc=N
 	'''
 	fitsfile - deepest highres image of field
 	facetfile - firections file to produce
-	xc,yc - field location ICRS (deg, deg), or else will use mean of calibrator's point
+	xc,yc - field location ICRS (deg, deg), or else will use mean of calibrator's locations
 	fov - field of view in deg
 	minSep - arcmin, the minimum seperation between calibrators, merge below
 	minFlux - flux cut
