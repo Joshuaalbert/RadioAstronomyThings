@@ -298,7 +298,7 @@ def make_directions_file(fitsfile,facetfile='factor_directions.txt',xc=None,yc=N
 	circle = Circle((-xc,yc),radius = fov/2.,facecolor='none')
 	plt.gca().add_patch(circle)
 	plt.colorbar()
-	plt.savefig("Facet_lodations.pdf",format='pdf')
+	plt.savefig("Facet_locations.pdf",format='pdf')
 	plt.show()
 
 	os.system("rm %s;sleep 1"%(facetfile))
