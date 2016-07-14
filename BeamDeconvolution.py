@@ -56,7 +56,10 @@ def quad2ecliptic(A,B,C,k=np.log(2)):
         a,b,c,d,e,f = ecliptic2quadratic(0.,0.,b[0],b[1],b[2])
         return (a-ak)**2 + (b-bk)**2 + (c-ck)**2
     res = minimize(chi2,(bmaj,bmin,bpa),args=(A,B,C),method='Powell')
-    return res.x
+    if res.x[0] >= res.x[1]:
+        return res.x
+    else:
+        return res.x[[1,0,2]]
     
 
 def deconvolve(A1,B1,C1,A2,B2,C2):
@@ -79,6 +82,35 @@ def deconvolve(A1,B1,C1,A2,B2,C2):
     Ck = (B2**2 *C1 - B1**2 *C2 + 4* A1* C1* C2 - 4* A2* C1* C2)/D
 
     return Ak,Bk,Ck
+
+def convolve(A1,B1,C1,A2,B2,C2):
+    '''
+        Convolves two gaussians with quadratic parametrization:
+        A,B,C are quadratic parametrization.
+        If you have bmaj,bmin,bpa, then get A,B,C = ecliptic2quadratic(0,0,bmaj,bmin,bpa)
+        Where g = factor*Exp(-A*X**2 - B*X*Y - C*Y**2)
+    '''
+    D1 = 4.*A1*C1 - B1**2
+    D2 = 4.*A2*C2 - B2**2
+    D3 = -2.*B1 * B2 + 4.*A2*C1 + 4.*A1*C2 + D1+D2
+    D4 = C2*D1+C1*D2
+    #Non-solvable cases
+    if (D1*D2*D3*D4 == 0):
+        print "Can't convolve..."
+        return (None,None,None)
+    if (D3 < 0):#always imaginary
+        print "D3 < 0, Imaginary solution",D3
+        return (None,None,None)
+    factor = 2.*np.pi*np.sqrt(D1 + 0j)*np.sqrt(D2 + 0j)/np.sqrt(D3/D4 + 0j)/np.sqrt(D4/(D1*D2) + 0j)
+    if np.abs(np.imag(factor)) > 10.*(7./3 - 4./3 - 1.):
+        print "Imaginary result somehow..."
+        return (None,None,None)
+    factor = np.real(factor)
+    A = (A2*D1 + A1 * D2)/D3
+    B = (B2*D1+B1*D2)/D3
+    C = D4/D3
+    k = np.log(factor*2.)
+    return A,B,C,factor
 
 def findCommonBeam(beams):
     '''Given a list of beams where each element of beams is a dictionary having standard casa format:
@@ -156,10 +188,6 @@ def findCommonBeam(beams):
                         work = True
             Area *= inc
     return cb
-
-            
-        
-
     
 def fftGaussian(A,B,C,X,Y):
     D = 4*A*C-B**2
@@ -167,4 +195,33 @@ def fftGaussian(A,B,C,X,Y):
 
 def gaussian(A,B,C,X,Y):
     return np.exp(-A*X**2 - B*X*Y - C*Y**2)
+
+
+
+if __name__ == '__main__':
+    #psf
+    bmaj = 1.
+    bmin = 0.5
+    bpa = np.pi/4.
+    print "Psf beam, elliptic:",bmaj,bmin,bpa
+    Apsf,Bpsf,Cpsf,d,e,f = ecliptic2quadratic(0,0,bmaj,bmin,bpa)
+    print "Quadratic:",Apsf,Bpsf,Cpsf
+    #blob to deconvolve
+    bmaj1 = 2.
+    bmin1 = 1.5
+    bpa1 = 0.
+    print "Source ,elliptic:",bmaj1,bmin1,bpa1
+    A1,B1,C1,d,e,f = ecliptic2quadratic(0,0,bmaj1,bmin1,bpa1)
+    print "Quadratic:",A1,B1,C1
+    A2,B2,C2,factor = convolve(A1,B1,C1,Apsf,Bpsf,Cpsf)
+    bmaj,bmin,bpa = quad2ecliptic(A2,B2,C2)
+    print "Analytic Convolve, elliptic:",bmaj,bmin,bpa
+    print "Quadratic:",A2,B2,C2
+    Ak,Bk,Ck = deconvolve(A2,B2,C2,Apsf,Bpsf,Cpsf)
+    bmaj,bmin,bpa = quad2ecliptic(Ak,Bk,Ck,k=np.log(2))
+    print "Deconvolve, elliptic:",bmaj,bmin,bpa
+    print "Quadratic:",Ak,Bk,Ck
+    print "Difference, elliptic:",bmaj-bmaj1,bmin-bmin1,bpa-bpa1
+    print "Difference, Quadratic:",Ak-A1,Bk-B1,Ck-C1
+    
 
