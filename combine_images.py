@@ -145,11 +145,7 @@ def findCommonBeam(beams):
     else:
         print "passed",
     return cb
-
-            
-        
-
-	
+ 
 def fftGaussian(A,B,C,X,Y):
 	D = 4*A*C-B**2
 	return 2*np.pi/np.sqrt(D)*np.exp(-4*np.pi/D*(-C*X**2 +B*X*Y -A*Y**2))
