@@ -3,6 +3,7 @@ import pylab as plt
 from scipy.stats import norm#is it poisson
 import glob,os
 from BeamDeconvolution import findCommonBeam
+import multiprocessing as mp
 
 def specCalc(A,nu,nu_ref):
     Sout = A[0]*np.ones_like(nu)
@@ -134,6 +135,9 @@ def mp_spectral(args):
         return (a,s)
     else:
         return (np.nan,np.nan)
+def flatten(a):
+    return np.reshape(a,[np.size(a)])
+
     
 def CalculateSpectralIndex(regridSmoothedImages,spectralMap,spectralMapError,rmss,nu_array):
     os.system("cp -r %s %s"%(regridSmoothedImages[0],spectralMap))
@@ -144,13 +148,14 @@ def CalculateSpectralIndex(regridSmoothedImages,spectralMap,spectralMapError,rms
         tb.open(image)
         map = tb.getcol('map')
         shape = map.shape
-        fluxes.append(np.flatten(map))
+        fluxes.append(flatten(map))
         masks.append(fluxes[-1]>3*rms)
         tb.close()
-    mask = mask[0]
+    mask = masks[0]
     for m in masks:
         mask = np.bitwise_and(mask,m)
     args = []
+    print "preparing args"
     i = 0 
     while i < np.size(mask):
         S_array = []
@@ -161,8 +166,10 @@ def CalculateSpectralIndex(regridSmoothedImages,spectralMap,spectralMapError,rms
         S_array = np.array([S_array])
         error_array = np.array(rmss)
         nu_array = np.array(nu_array)
-        args.append(mask[i],S_array,error_array,nu_array)
+        args.append([mask[i],S_array,error_array,nu_array])
         i += 1
+    print "args prepared"
+    p = mp.Pool(mp.cpu_count())
     res = p.map(mp_spectral,args)
     spectralIndexArray = np.zeros_like(fluxes[0])
     spectralIndexErrorArray = np.zeros_like(fluxes[0])
@@ -187,12 +194,20 @@ def getRms(casaImage,snr=3.,plot=False):
     pixel_array = ia.getchunk().flatten()
     ia.close()
     #remove some of tail
-    s = np.std(pixel_array)
-    pixel_array[np.abs(pixel_array) > snr*s] = np.nan#s includes signal so greater than rms background
+    s = nanstd(pixel_array)
+    m = nanmean(pixel_array)
+    ds = 1
+    while ds > 0.1:
+        pixel_array[np.abs(pixel_array-m) > snr*s] = np.nan#s includes signal so greater than rms background
+        m_ = nanmean(pixel_array)
+        s_ = nanstd(pixel_array)
+        ds = (s - s_)/s
+        s = s_
+        m = m_
     #could repeat
-    mu,sigma = norm.fit(pixel_array)#should remove those above 3 sigma first to remove tail
-    print "Image Statistics %s: mu = %.2e Jy/beam, sigma = %.2e Jy/beam"%(casaImage,mu,sigma)
-    return mu
+    #mu,sigma = norm.fit(pixel_array)#should remove those above 3 sigma first to remove tail
+    print "Image Statistics %s: mu = %.2e Jy/beam, sigma = %.2e Jy/beam"%(casaImage,m,s)
+    return m
 
 def getImageInfo(image):
     '''Get required information for calculation
@@ -203,13 +218,13 @@ def getImageInfo(image):
     freq = summary['refval'][axes=='Frequency']
     ra = summary['refval'][axes=='Right Ascension']*180./np.pi
     dec = summary['refval'][axes=='Declination']*180./np.pi
-    beam = summary['restoringbeam']
+    beam = {'major':{'value':summary['restoringbeam']['major']['value']/3600.},'minor':{'value':summary['restoringbeam']['minor']['value']/3600.},'pa':summary['restoringbeam']['positionangle']}
     incr = min(summary['incr'][0],summary['incr'][1])
     ia.close()
     rms = getRms(image)
     return beam,incr,freq, ra, dec, rms
 
-def run(images_glob,output_dir):
+def run(images_glob,output_dir,rmss=None):
     images = glob.glob(images_glob)
     print "Images in:",images
     try:
@@ -231,7 +246,10 @@ def run(images_glob,output_dir):
                 importfits(fitsimage=images[i],imagename = casaImages[i])
             imageInfo.append(getImageInfo(casaImages[i]))
             beams.append(imageInfo[i][0])
-            rms.append(imageInfo[i][5])
+            if rmss is None:
+                rms.append(imageInfo[i][5])
+            else:
+                rms.append(rmss[i])
             nu_array.append(imageInfo[i][2])
             if beams[i]['minor']['value'] >= beams[idxMaxBeam]['minor']['value']:#just minor axis
                 idxMaxBeam = i
@@ -243,8 +261,8 @@ def run(images_glob,output_dir):
             return
     cb = findCommonBeam(beams)
     print "Common beam: ",cb
-    print "Regridding to [%d x %d]"%(imageInfo[idxMaxSize][1][0],imageInfo[idxMaxSize][1][1])
-    print "Should double that"
+#    print "Regridding to [%d x %d]"%(imageInfo[idxMaxSize][1][0],imageInfo[idxMaxSize][1][1])
+#   print "Should double that"
     regridImages = []
     regridSmoothedImages = []
     i = 0
@@ -253,11 +271,15 @@ def run(images_glob,output_dir):
         regridImages.append(casaImages[i].replace('.im','-regrid.im'))
         regridSmoothedImages.append(casaImages[i].replace('.im','-regrid-smoothed.im'))
         if not os.path.exists(regridImages[i]):
-            imregrid(imagename=casaImages[i],template=casaImages[idxMaxSize],output=regridImages[i],axes=[0,1])
+            if i == idxMaxSize:
+                os.system("cp -r %s %s"%(casaImages[i],regridImages[i]))
+            else:
+                imregrid(imagename=casaImages[i],template=casaImages[idxMaxSize],output=regridImages[i],axes=[0,1])
         if not os.path.exists(regridSmoothedImages[i]):
-            imsmooth(imagename=regridImages[i],major='%.5farcsec'%(cb[0]),minor='%.5farcsec'%(cb[1]),pa='%.5fdeg'%(cb[2]),outfile=regridSmoothedImages[i],targetres=True,kernel='gauss')
-            if not os.path.exists(regridSmoothedImages[i]):
+            if i == idxMaxBeam:
                 os.system("cp -r %s %s"%(regridImages[i],regridSmoothedImages[i]))
+            else:
+                imsmooth(imagename=regridImages[i],major='%.5farcsec'%(cb[0]),minor='%.5farcsec'%(cb[1]),pa='%.5fdeg'%(cb[2]),outfile=regridSmoothedImages[i],targetres=True,kernel='gauss')
         i += 1
     spectralMap=output_dir+'/SpectralIndexMap.im'
     spectralMapError=output_dir+'/SpectralIndexMapError.im'
@@ -271,4 +293,4 @@ def run(images_glob,output_dir):
 
     
 if __name__=='__main__':
-    run("*.fits","./SpectralIndexMap")
+    run("*.fits","./SpectralIndexMap",[120e-6,90e-6])
