@@ -1,6 +1,6 @@
 {
     "array": "Test Array",
-    "dataFolder": "/net/para10/data2/albert/pipeline_repo/RadioAstronomyThings/IonoTomo/output/0",
+    "dataFolder": "",
     "frequency": 1427583133.3333335,
     "layerHeights": [
         10,

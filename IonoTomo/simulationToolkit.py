@@ -85,6 +85,16 @@ class simulation(object):
         '''Set things to get simulation on track'''
 
         #set current sim directory dataFolder, and save the settings
+        if self.dataFolder == "":
+            i = 0
+            while self.dataFolder == "":
+                dataFolder = "{0}/{1}".format(self.workingDir,i)
+                try:
+                    os.makedirs(dataFolder)
+                    self.dataFolder = os.path.abspath(dataFolder)
+                except:
+                    self.log("data folder already exists (avoiding overwrite!): {0}".format(self.dataFolder))
+                i += 1
         if os.path.isdir(self.dataFolder):
             self.log("Using data folder: {0}".format(self.dataFolder))
             simConfigJson = "{0}/{1}".format(self.dataFolder,self.simConfigJson.split('/')[-1])
@@ -95,13 +105,7 @@ class simulation(object):
             os.makedirs(self.dataFolder)
             self.dataFolder = os.path.abspath(self.dataFolder)
             
-        if self.dataFolder == "":
-            self.dataFolder = "{0}/{1}".format(self.workingDir,0)
-            try:
-                os.makedirs(self.dataFolder)
-            except:
-                self.log("data folder already exists (beware of overwrite!): {0}".format(self.dataFolder))
-            self.dataFolder = os.path.abspath(self.dataFolder)
+        
         try:
             self.setFrequency(self.frequency)
         except:
