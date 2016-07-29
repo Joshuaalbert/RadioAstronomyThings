@@ -18,14 +18,13 @@ from matplotlib.widgets import RadioButtons, Cursor, Slider, Button
 from TextBoxWidget import TextBox
 
 class visual(object):
-    def __init__(self,simConfigJson=None,help=False,**args):
+    def __init__(self,simConfigJson=None,logFile=None,help=False,**args):
         '''Get the args by passing help=True'''
         if help:
             self.simTk(help=True)
             exit(0)
-        self.simTk = simulationToolkit.simulation(simConfigJson=simConfigJson,**args)
-        self.array = self.simTk.array
-        self.log("Visualizing Array: {0}".format(self.array))
+        self.simTk = simulationToolkit.Simulation(simConfigJson=simConfigJson,logFile=logFile,**args)
+        self.log = self.simTk.log
         self.curWavelength = self.simTk.getWavelength()
         self.curFrequency = self.simTk.getFrequency()
         self.speedoflight = self.simTk.speedoflight
@@ -481,7 +480,7 @@ class visual(object):
         self.colorbarAxes.clear()
         self.colorbar = self.fig.colorbar(self.dataImage,cax=self.colorbarAxes,orientation='horizontal')
         self.fig.canvas.draw()
-gui = visual('SimulationConfig.json',array='Test Array')
+gui = visual('SimulationConfig.json',logFile='logs/0.log')
 gui.createGui()
 plt.show()
 
