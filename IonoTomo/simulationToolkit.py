@@ -15,32 +15,29 @@ import json
 import h5py
 import os
 import astropy.coordinates as ac
+import astropy.units as au
+import astropy.time as at
 import skyComponents
 from Logger import Logger
+from Atmosphere import Atmosphere
 
 class RadioArray(object):
     def __init__(self,logger,arrayFile = None,name = None,msFile=None,numAntennas=0,earthLocs=None):
         self.log = logger
+        self.locs = []
         if arrayFile is not None:
             self.arrayFile = arrayFile
             self.loadArrayFile(arrayFile)
-        self.locs = []
-
-    def getAttributes(self,help=False):
-        '''Store the definition of attributes "name":[type,default]'''
-        self.attributes = {#'maxLayer':[int,0],
-                  #'minLayer':[int,0],
-                  'name':[str,""],
-                  'lon':[np.array,np.array([])],
-                  'lat':[np.array,np.array([])],
-                  'height':[np.array,np.array([])]
-                  }
-        if help:
-            self.log("Attribute:[type, default]")
-            self.log(self.attributes)
-        return self.attributes
     def loadArrayFile(self,arrayFile):
-        pass
+        '''Loads a csv where each row is x,y,z in geocentric coords of the antennas'''
+        d = np.genfromtxt(arrayFile)
+        i = 0
+        locs = []
+        while i < d.shape[0]:
+            earthLoc = ac.SkyCoord(x=d[i,0]*au.m,y=d[i,1]*au.m,z=d[i,2]*au.m,frame='itrs')
+            locs.append(earthLoc)
+            i += 1
+        self.addLocs(locs)
     def saveArrayFile(self,arrayFile):
         pass
     def loadMsFile(self,msFIle):
@@ -59,17 +56,22 @@ class RadioArray(object):
         r0 = np.array([0,0,0])*au.m
         i = 0
         while i < len(self.locs):
-            locgc = self.locs[i].geocentric
-            r0 += np.array([locgc[0].to(au.m),
-                              locgc[1].to(au.m),
-                              locgc[2].to(au.m)])*au.m
+            locgc = self.locs[i].earth_location.geocentric
+            r0 += np.array([locgc[0].to(au.m).value,
+                              locgc[1].to(au.m).value,
+                              locgc[2].to(au.m).value])*au.m
             i += 1
         r0 /= float(len(self.locs))
-        self.center = ac.EarthLocation(x=r0[0],y=r0[1],z=r0[2])
+        self.center = ac.SkyCoord(x=r0[0],y=r0[1],z=r0[2],frame='itrs')
+        self.log("Center of array: {0}".format(self.center))
         return self.center
     
     def getCenter(self):
-        return self.center
+        try:
+            return self.center
+        except:
+            self.calcCenter()
+            return self.center
         
 class SkyModel(object):
     def __init__(self,skyModelFile=None):
@@ -81,34 +83,6 @@ class SkyModel(object):
         
         
 
-class Layer(object):
-    def __init__(self,r0,dr,D):
-        '''r0 is location of the center of the layer
-        dr is the resolution of square cells
-        D is size of one side of the square aperture'''
-        self.processedTimes = []
-        self.r0 = r0#earth location
-        self.dr = dr#in m
-        self.D = D#in m
-        lon0,lat0,z = r0.geodetic
-        theta = D/z.to(au.m).value
-        N = np.ceil(D/dr)
-        if (N % 2) == 0:
-            N += 1 #make 2n+1
-        longitudes = np.linespace(lon0.to(au.rad).value - theta/2.,
-                                 lon0.to(au.rad).value +theta/2.,
-                                 N)
-        latitudes = np.linespace(lat0.to(au.rad).value - theta/2.,
-                                 lat0.to(au.rad).value +theta/2.,
-                                 N)
-        
-        
-        
-    def processed(self,time):
-        if time in self.processedTimes:
-            return True
-        else:
-            return False    
 
 class Simulation(Logger):
     def __init__(self,simConfigJson=None,logFile=None,help=False,**args):
@@ -139,11 +113,13 @@ class Simulation(Logger):
         self.attributes = {#'maxLayer':[int,0],
                   #'minLayer':[int,0],
                   'skyModelFile':[str,""],
+                  'obsStart':[lambda s:at.Time(s,format='isot'),"2000-01-01T00:00:00.000"],
+                  'sampleTime':[float,1.],
+                  'obsLength':[float,600.],
                   'pointing':[np.array,np.array([0.,0.])],
                   'layerHeights':[np.array,np.array([])],
                   #'maxTime':[int,0],
                   #'minTime':[int,0],
-                  'timeSlices':[np.array,np.array([0.])],
                   'frequency':[float,150e6],
                   'wavelength':[float,0.214],
                   'arrayFile':[str,""],
@@ -170,7 +146,7 @@ class Simulation(Logger):
                         self.log("Could not convert {0} into {1}".format(args[attr],attributes[attr][0]))
             else:
                 #already set of setting to default
-                setattr(self,attr,getattr(self,attr,attributes[attr][1]))
+                setattr(self,attr,getattr(self,attr,attributes[attr][0](attributes[attr][1])))
                 #self.log("Set: {0} -> {1}".format(attr,getattr(self,attr)))
                 
     def startSimulation(self):
@@ -208,34 +184,23 @@ class Simulation(Logger):
         self.skyModel = SkyModel(self.skyModelFile)
         #set array
         if self.arrayFile is not None:
-            self.array = RadioArray(self.log,arrayFile = self.arrayFile)
+            self.radioArray = RadioArray(self.log,arrayFile = self.arrayFile)
         else:
-            self.array = RadioArray(self.log)
+            self.radioArray = RadioArray(self.log)
         #set frequency
         try:
             self.setFrequency(self.frequency)
         except:
             self.setWavelength(self.wavelength)
-        #sort and reduce times and layers
-        sortedTime = []
-        sortedLayers = []
-        for timeSlice,layerHeight in zip(self.timeSlices,self.layerHeights):
-            if timeSlice not in sortedTime:
-                sortedTime.append(timeSlice)
-            if layerHeight not in sortedLayers:
-                sortedLayers.append(layerHeight)
-        self.timeSlices = np.sort(np.array(sortedTime))
-        self.layerHeights = np.sort(np.array(sortedLayers))
-        #make layers which are spherically symmetric
-        self.layers = {}
-        #array centroid
-        c0 = self.array.getCenter()
-        #pointing ra, and dec plus distance
-        i = 0
-        while i < len(self.layerHeights):
-            self.layer[i] = Layer() 
+        #time
+        self.timeSlices = []
+        nsample = np.ceil(self.obsLength/self.sampleTime)
+        i = 1
+        while i <= nsample:
+            self.timeSlices.append(at.Time(self.obsStart.gps + i*self.sampleTime, format = 'gps'))
             i += 1
-                
+        
+        self.atmosphere = Atmosphere(self.layerHeights)#shall be it's own thing eventually
         self.log("Starting computations... please wait.")
         self.compute()
         self.log("Finished computations... enjoy.")
@@ -264,7 +229,7 @@ class Simulation(Logger):
         
     def saveSimConfigJson(self,simConfigJson):
         '''Save config in a json to load later.'''
-        self.log("Saving configuration in {0}".format(simConfigJson))
+        #self.log("Saving configuration in {0}".format(simConfigJson))
         try:
             jobject = {}
             attributes = self.getAttributes()
@@ -272,6 +237,8 @@ class Simulation(Logger):
                 jobject[attr] = getattr(self,attr,attributes[attr][1])
                 if attributes[attr][0] == np.array:#can't store np.array
                     jobject[attr] = list(jobject[attr])
+                if attributes[attr][0] == at.core.Time:#can't store np.array
+                    jobject[attr] = jobject[attr].isot
             try:
                 f = open(simConfigJson,'w+')
                 json.dump(jobject,f,sort_keys=True, indent=4, separators=(',', ': '))
@@ -335,8 +302,8 @@ class Simulation(Logger):
                 self.log("Failed to load precomputed results.")
                 exit(1)
         #save before running
-        simConfigJson = "{0}/{1}".format(self.dataFolder,self.simConfigJson.split('/')[-1])
-        self.saveSimConfigJson(simConfigJson)
+        #simConfigJson = "{0}/{1}".format(self.dataFolder,self.simConfigJson.split('/')[-1])
+        #self.saveSimConfigJson(simConfigJson)
         timeIdx = 0
         while timeIdx < len(self.timeSlices):
             self.updateLayers(timeIdx)
