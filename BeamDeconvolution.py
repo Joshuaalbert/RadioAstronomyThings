@@ -83,47 +83,6 @@ def elliptic2quadratic(bmaj,bmin,pa,xc=0,yc=0,k=np.log(2)):
         return A,B,C
     return A,B,C,D,E,F
 
-def quad2ecliptic(A,B,C,k=np.log(2)):
-    '''Takes quadratic parameters (A,B,C) and 
-    does a linear solve and then a chi-squared solve for non-linear fit
-    returns 
-        bmaj, bmin -> (units dependent on how A,B,C derived)
-        bpa -> (deg)
-    if not possible returns None'''
-    A /= k
-    B /= k
-    C /= k
-    D1 = np.sqrt(A**2-2*A*C+B**2+C**2)
-    A0 = (-D1 + A + C)/2.
-    C0 = (D1 + A + C)/2.
-    D2 = D1 + A - C
-    D3 = 2*D2*D1
-    if D3 < 0 or A0 < 0 or C0 < 0:
-    #    print "No real ecliptic coordinates from quadratic"
-        return None
-    if (D2 == 0) or (D3 - B*np.sqrt(D3) == 0):
-        #print "circle"
-        theta = np.pi/2.
-    else:
-        theta = 2.*np.arctan(B/D2 - np.sqrt(D3)/D2)
-    bmaj = 2./np.sqrt(A0)
-    bmin = 2./np.sqrt(C0)
-    bpa = (theta - np.pi/2.)*180/np.pi#degs
-    bpa = np.mod(bpa,180.)-90.
-#    while bpa < 0:#to (0,180)
-#        bpa += 180.
-#    while bpa > 180.:
-#        bpa -= 180.
-    def chi2(b,ak,bk,ck):
-        a,b,c,d,e,f = ecliptic2quadratic(0.,0.,b[0],b[1],b[2])
-        return (a-ak)**2 + (b-bk)**2 + (c-ck)**2
-    res = minimize(chi2,(bmaj,bmin,bpa),args=(A,B,C),method='Powell')
-    if res.x[0] >= res.x[1]:
-        return res.x
-    else:
-        return res.x[[1,0,2]]
-    
-
 def deconvolve(A1,B1,C1,A2,B2,C2):
     '''Solves analytically G(A1,B1,C1) = convolution(G(A2,B2,C2), G(Ak,Bk,Ck))
     Returns Ak,Bk,Ck
