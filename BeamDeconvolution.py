@@ -1,9 +1,69 @@
 import numpy as np
-from scipy.optimize import minimize
 
-def ecliptic2quadratic(xc,yc,bmaj,bmin,pa,k=np.log(2)):
-    '''a*x**2 + b*x*y + c*y**2 + d*x + e*y + f = k
-    pa in deg'''
+def quadratic2elliptic(A,B,C,D=0,E=0,F=-np.log(2)):
+    """Invert:
+    (A0 cos^2 phi + c0 sin^2 phi)k = A
+    (A0-C0)sin 2phi k = B
+    (a0 sin^2 phi + c0 cos^2 phi) k = C
+    returns bmaj,bmin,bpa[,xc,y if D,E != 0]"""
+    if (B**2 - 4*A*C) == 0:
+        print "It is parabolic,not elliptic or hyperbolic"
+        return None
+    if A!=C:#not a circle so should be able to solve second equation
+        #A-C = A0 cos^2 phi + c0 sin^2 phi - a0 sin^2 phi - c0 cos^2 phi
+        #A-C = A0 (cos^2 phi - sin^2 phi)- c0 (-sin^2 phi  + c0 cos^2 phi) = (A0 - C0) cos 2phi
+        #(cos^2 phi - sin^2 phi) = cos 2 phi        
+        phi = np.arctan(B/(A-C))/2.#choose your own modulus
+    else:#circle
+        phi = pi/4.#arbitrary, nonzero cos and sin for the rest
+    #rotate x,y to phi to x',y' =  xcos - ysin, xsin + ycos
+    #then expand A(x' - xc)^2 + B(x'-xc)(y'-yc) + C(y' - yc)^2 + D(x' - xc) + E(y' - yc) + F = 0
+    #then now the coord sys is unrotated relative to the quadratic paramters
+    c = np.cos(phi)
+    s = np.sin(phi)
+    c2 = c*c
+    s2 = s*s
+    A1 = A*c2 + B*c*s + C*s2
+    B1 = 2.*(C-A)*s*c+B*(c2-s2)#should be zero since there's no cross term in the unroated
+    #print "Rotated cross term: {0} =? 0".format(B1)
+    C1 = A*s2 - B*c*s + C*c2
+    D1 = D*c + E*s
+    E1 = -D*s + E*c
+    if (A1 == 0) or C1 == 0:
+        print "degenerate between ellipse and hyperbola"
+        return None
+    #complete square for x's and y's
+    #A1(x-xc)^2 + C1(y-yc)^2 + F = A1xx - 2A1xxc + A1xcxc + C1yy - 2C1yyc + C1ycyc = A1() + D1() + C1() + E1() + A1xcxc + C1ycyc + F =0 
+    xc1 = D1/(-2.*A1)
+    yc1 = E1/(-2.*C1)#solutions (in rotated frame)
+    #now unrotate them
+    xc = xc1*c - yc1*s#might be xc1*c + yc1*s
+    yc = xc1*s + yc1*c#might be -xc1*s + yc1*c
+    #bring the remainder of completed squares to rhs with F
+    rhs = -F + D1**2/(4.*A1)  + E1**2/(4.*C1)
+    #(x-xc)^2/(bmaj/2)^2 + (y-yc)^2/(bmin/2)^2 = 1
+    #A1(x-xc)^2 + C1*y-yc)^2 = rhs
+    
+    A0 = A1/rhs
+    C0 = C1/rhs
+    bmaj = np.sign(A0)*2.*np.sqrt(1./np.abs(A0))
+    bmin = np.sign(C0)*2.*np.sqrt(1./np.abs(C0))
+    if bmaj*bmin < 0:
+        print "Hyperbolic solution ;)not what we want here though technically we just inverted"
+        return None 
+    if bmin > bmaj:
+        temp = bmin
+        bmin = bmaj
+        bmaj = temp
+    bpa = phi - np.pi/2.#starts at y
+    if E==0 and D==0:
+        return bmaj,bmin,bpa*180./np.pi
+    return bmaj,bmin,bpa*180./np.pi,xc,yc
+        
+def elliptic2quadratic(bmaj,bmin,pa,xc=0,yc=0,k=np.log(2)):
+    '''a*x**2 + b*x*y + c*y**2 + d*x + e*y + f = 0
+    pa in deg
+    return A,B,C[,D,E,F if xc,yc!=0]'''
 
     #unrotated solution
     a0 = k/(bmaj/2.)**2
@@ -18,7 +78,9 @@ def ecliptic2quadratic(xc,yc,bmaj,bmin,pa,k=np.log(2)):
     #Now move center
     D = -2.*A*xc - B*yc
     E = -2.*C*yc - B*xc
-    F = A*xc**2 + B*xc*yc + C*yc**2
+    F = A*xc**2 + B*xc*yc + C*yc**2 - 1./k
+    if xc==0 and yc==0:
+        return A,B,C
     return A,B,C,D,E,F
 
 def quad2ecliptic(A,B,C,k=np.log(2)):
@@ -87,7 +149,7 @@ def convolve(A1,B1,C1,A2,B2,C2):
     '''
         Convolves two gaussians with quadratic parametrization:
         A,B,C are quadratic parametrization.
-        If you have bmaj,bmin,bpa, then get A,B,C = ecliptic2quadratic(0,0,bmaj,bmin,bpa)
+        If you have bmaj,bmin,bpa, then get A,B,C = elliptic2quadratic(0,0,bmaj,bmin,bpa)
         Where g = factor*Exp(-A*X**2 - B*X*Y - C*Y**2)
     '''
     D1 = 4.*A1*C1 - B1**2
@@ -124,18 +186,18 @@ def findCommonBeam(beams):
     #Try convolving to max area one
     Areas = beams_array[:,0]*beams_array[:,1]*np.pi/4./np.log(2.)
     idxMaxArea = np.argsort(Areas)[-1]
-    A1,B1,C1,D,E,F = ecliptic2quadratic(0.,0.,beams_array[idxMaxArea,0],beams_array[idxMaxArea,1],beams_array[idxMaxArea,2])
+    A1,B1,C1 = elliptic2quadratic(beams_array[idxMaxArea,0],beams_array[idxMaxArea,1],beams_array[idxMaxArea,2])
     cb = beams_array[idxMaxArea,:].flatten()
     i = 0
     while i < np.size(Areas):
         print np.size(Areas),i
         if i != idxMaxArea:
             #deconlove
-            A2,B2,C2,D,E,F = ecliptic2quadratic(0.,0.,beams_array[i,0],beams_array[i,1],beams_array[i,2])
+            A2,B2,C2 = ecliptic2quadratic(beams_array[i,0],beams_array[i,1],beams_array[i,2])
             Ak,Bk,Ck = deconvolve(A1,B1,C1,A2,B2,C2)
             print Ak,Bk,Ck
             try:
-                b = quad2ecliptic(Ak,Bk,Ck,k=np.log(2))
+                b = quadratic2elliptic(Ak,Bk,Ck)
                 if b is None:
                     pass
                 else:
@@ -159,11 +221,11 @@ def findCommonBeam(beams):
                 bmin = Area*4.*np.log(2)/np.pi/bj
                 for p in pa:
                     cb = (bj,bmin,p)
-                    A1,B1,C1,D,E,F = ecliptic2quadratic(0.,0.,cb[0],cb[1],cb[2])
+                    A1,B1,C1 = elliptic2quadratic(cb[0],cb[1],cb[2])
                     i = 0
                     while i < np.size(Areas):
                         #deconlove
-                        A2,B2,C2,D,E,F = ecliptic2quadratic(0.,0.,beams_array[i,0],beams_array[i,1],beams_array[i,2])
+                        A2,B2,C2 = elliptic2quadratic(beams_array[i,0],beams_array[i,1],beams_array[i,2])
                         Ak,Bk,Ck = deconvolve(A1,B1,C1,A2,B2,C2)
                         print Ak,Bk,Ck
                         if Ak is None:
@@ -172,7 +234,7 @@ def findCommonBeam(beams):
                             break
 
                         try:
-                            b = quad2ecliptic(Ak,Bk,Ck,k=np.log(2))
+                            b = quadratic2elliptic(Ak,Bk,Ck)
                             if b is None:
                                 cb = None
                                 break
@@ -202,23 +264,25 @@ if __name__ == '__main__':
     #psf
     bmaj = 1.
     bmin = 0.5
-    bpa = np.pi/4.
+    bpa = 90.
     print "Psf beam, elliptic:",bmaj,bmin,bpa
-    Apsf,Bpsf,Cpsf,d,e,f = ecliptic2quadratic(0,0,bmaj,bmin,bpa)
+    Apsf,Bpsf,Cpsf = elliptic2quadratic(bmaj,bmin,bpa)
+    print "test quadratic2elliptical"
+    print "psf elliptical check:",quadratic2elliptic(Apsf,Bpsf,Cpsf)
     print "Quadratic:",Apsf,Bpsf,Cpsf
     #blob to deconvolve
     bmaj1 = 2.
     bmin1 = 1.5
     bpa1 = 0.
     print "Source ,elliptic:",bmaj1,bmin1,bpa1
-    A1,B1,C1,d,e,f = ecliptic2quadratic(0,0,bmaj1,bmin1,bpa1)
+    A1,B1,C1 = elliptic2quadratic(bmaj1,bmin1,bpa1)
     print "Quadratic:",A1,B1,C1
     A2,B2,C2,factor = convolve(A1,B1,C1,Apsf,Bpsf,Cpsf)
-    bmaj,bmin,bpa = quad2ecliptic(A2,B2,C2)
+    bmaj,bmin,bpa = quadratic2elliptic(A2,B2,C2)
     print "Analytic Convolve, elliptic:",bmaj,bmin,bpa
     print "Quadratic:",A2,B2,C2
     Ak,Bk,Ck = deconvolve(A2,B2,C2,Apsf,Bpsf,Cpsf)
-    bmaj,bmin,bpa = quad2ecliptic(Ak,Bk,Ck,k=np.log(2))
+    bmaj,bmin,bpa = quadratic2elliptic(Ak,Bk,Ck)
     print "Deconvolve, elliptic:",bmaj,bmin,bpa
     print "Quadratic:",Ak,Bk,Ck
     print "Difference, elliptic:",bmaj-bmaj1,bmin-bmin1,bpa-bpa1
