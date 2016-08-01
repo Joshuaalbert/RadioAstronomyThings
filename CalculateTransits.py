@@ -26,8 +26,16 @@ def getTransit(lon,lat,time,ra,dec,tzOffset=0):
         i += 1
     azs = np.array(azs)
     alts = np.array(alts)
-    plt.plot_date(at.Time(times+tzOffset*3600.,format='gps',scale='utc').plot_date,alts)
-    plt.gcf().autofmt_xdate()
+    f,(ax1,ax2) = plt.subplots(2,sharex=True)
+    ax1.plot_date(at.Time(times+tzOffset*3600.,format='gps',scale='utc').plot_date,alts)
+    ax1.set_ylabel("Altitude above hor. (deg)")
+    ax1.set_title("Alt/Az ({0},{1}) @ {2} of {3},{4}".format(lon,lat,time,ra,dec))
+    ax2.plot_date(at.Time(times+tzOffset*3600.,format='gps',scale='utc').plot_date,azs)
+    ax2.set_ylabel("Azimuth, E of N (deg)")
+    f.autofmt_xdate()
+    f.subplots_adjust(hspace=0)
+    plt.setp([a.get_xticklabels() for a in f.axes[:-1]], visible=False)
+
     plt.show()
     transitIdx = np.argmax(alts)
     riseIdx = np.argmin(alts[:transitIdx]**2)

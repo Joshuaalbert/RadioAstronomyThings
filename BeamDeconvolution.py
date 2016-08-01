@@ -8,14 +8,14 @@ def quadratic2elliptic(A,B,C,D=0,E=0,F=-np.log(2)):
     returns bmaj,bmin,bpa[,xc,y if D,E != 0]"""
     if (B**2 - 4*A*C) == 0:
         print "It is parabolic,not elliptic or hyperbolic"
-        return None
+        return None,None,None
     if A!=C:#not a circle so should be able to solve second equation
         #A-C = A0 cos^2 phi + c0 sin^2 phi - a0 sin^2 phi - c0 cos^2 phi
         #A-C = A0 (cos^2 phi - sin^2 phi)- c0 (-sin^2 phi  + c0 cos^2 phi) = (A0 - C0) cos 2phi
         #(cos^2 phi - sin^2 phi) = cos 2 phi        
         phi = np.arctan(B/(A-C))/2.#choose your own modulus
     else:#circle
-        phi = pi/4.#arbitrary, nonzero cos and sin for the rest
+        phi = np.pi/4.#arbitrary, nonzero cos and sin for the rest
     #rotate x,y to phi to x',y' =  xcos - ysin, xsin + ycos
     #then expand A(x' - xc)^2 + B(x'-xc)(y'-yc) + C(y' - yc)^2 + D(x' - xc) + E(y' - yc) + F = 0
     #then now the coord sys is unrotated relative to the quadratic paramters
@@ -31,7 +31,7 @@ def quadratic2elliptic(A,B,C,D=0,E=0,F=-np.log(2)):
     E1 = -D*s + E*c
     if (A1 == 0) or C1 == 0:
         print "degenerate between ellipse and hyperbola"
-        return None
+        return None,None,None
     #complete square for x's and y's
     #A1(x-xc)^2 + C1(y-yc)^2 + F = A1xx - 2A1xxc + A1xcxc + C1yy - 2C1yyc + C1ycyc = A1() + D1() + C1() + E1() + A1xcxc + C1ycyc + F =0 
     xc1 = D1/(-2.*A1)
@@ -49,8 +49,8 @@ def quadratic2elliptic(A,B,C,D=0,E=0,F=-np.log(2)):
     bmaj = np.sign(A0)*2.*np.sqrt(1./np.abs(A0))
     bmin = np.sign(C0)*2.*np.sqrt(1./np.abs(C0))
     if bmaj*bmin < 0:
-        print "Hyperbolic solution ;)not what we want here though technically we just inverted"
-        return None 
+        print "Hyperbolic solution ;) not what we want here though technically we just inverted properly."
+        return None,None,None
     if bmin > bmaj:
         temp = bmin
         bmin = bmaj
@@ -94,14 +94,16 @@ def deconvolve(A1,B1,C1,A2,B2,C2):
     if (np.abs(D) < 10*(1-2./3.-1./3.)):
 
         #print "Indefinite... invertibles"
-        return (None,None,None)#delta function
+        return np.nan,np.nan,np.nan#delta function
     if (D<0.):
         #print "Inverse Gaussian, discriminant D:",D
+        #ie. hyperbolic solution, still valid but elliptic representation is impossible instead you get hyperbolic parameters: negative bmaj/bmin
         pass
     Ak = (-A2* B1**2 + A1* B2**2 + 4* A1* A2* C1 - 4* A1* A2* C2)/D
     Bk = (-B1**2 *B2 + B1* B2**2 + 4* A1* B2* C1 - 4* A2* B1* C2)/D
     Ck = (B2**2 *C1 - B1**2 *C2 + 4* A1* C1* C2 - 4* A2* C1* C2)/D
-
+    if (Bk*Bk - 4*Ak*Ck) == 0:
+        return None,None,None
     return Ak,Bk,Ck
 
 def convolve(A1,B1,C1,A2,B2,C2):
