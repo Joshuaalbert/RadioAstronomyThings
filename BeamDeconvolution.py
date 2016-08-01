@@ -217,6 +217,13 @@ def fftGaussian(A,B,C,X,Y):
 def gaussian(A,B,C,X,Y):
     return np.exp(-A*X**2 - B*X*Y - C*Y**2)
 
+def psfTGSS1(dec):
+    '''input declination in degrees
+    return bmaj(arcsec), bmin(arcsec), bpa(degrees)'''
+    if dec > 19.0836824:
+        return 25.,25.,0.
+    else:
+        return 25.,25./np.cos(np.pi*(dec-19.0836824)/180.),0.
 
 
 if __name__ == '__main__':
