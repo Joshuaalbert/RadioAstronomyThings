@@ -16,6 +16,7 @@ def quadratic2elliptic(A,B,C,D=0,E=0,F=-np.log(2)):
         phi = np.arctan(B/(A-C))/2.#choose your own modulus
     else:#circle
         phi = np.pi/4.#arbitrary, nonzero cos and sin for the rest
+        phi = 0.
     #rotate x,y to phi to x',y' =  xcos - ysin, xsin + ycos
     #then expand A(x' - xc)^2 + B(x'-xc)(y'-yc) + C(y' - yc)^2 + D(x' - xc) + E(y' - yc) + F = 0
     #then now the coord sys is unrotated relative to the quadratic paramters
@@ -133,7 +134,7 @@ def convolve(A1,B1,C1,A2,B2,C2):
     B = (B2*D1+B1*D2)/D3
     C = D4/D3
     k = np.log(factor*2.)
-    return A,B,C,factor
+    return A,B,C#,factor
 
 def findCommonBeam(beams):
     '''Given a list of beams where each element of beams is a dictionary having standard casa format:
@@ -228,28 +229,53 @@ def psfTGSS1(dec):
         return 25.,25./np.cos(np.pi*(dec-19.0836824)/180.),0.
 
 def testError():
-    bmajp = 1,
-    bminp = 0.5,
-    A2,B2,C2 = elliptic2quadratic(bmajp,bminp,0)    
+    import pylab as plt
+    dec = np.linspace(-90,20,40)
+    b = np.linspace(1e-10,25,40)
+    pa = np.linspace(-np.pi/2,np.pi/2,40)
+    p = 0
+    errors = []
+    while p < 30:
+        bmajP,bminP,bpaP = psfTGSS1(dec[p])
+        A2,B2,C2 = elliptic2quadratic(bmajP,bminP,bpaP)
+        i = 0
+        while i < 30:
+            bmaj2 = b[i]
+            j = 0
+            while j < 30:
+                bmin2 = b[j]
+                if bmin2 > bmaj2:
+                    j += 1
+                    continue
+                n = 0
+                while n < 30:    
+                    bpa2 = pa[n]
+                    Ak,Bk,Ck = elliptic2quadratic(bmaj2,bmin2,bpa2)
+                    A1,B1,C1 = convolve(A2,B2,C2,Ak,Bk,Ck)
+                    if (A1 == None):
+                        n += 1
+                        continue
+                    bmaj1,bmin1,bpa1 = quadratic2elliptic(A1,B1,C1)
+                    Ak_,Bk_,Ck_ = deconvolve(A1,B1,C1,A2,B2,C2)
+                    bmaj_,bmin_,bpa_ = quadratic2elliptic(Ak_,Bk_,Ck_)
+                    if not np.isnan(bmaj_-bmaj2):
+                        errors.append([bmaj_-bmaj2,bmin_-bmin2,bpa_-bpa2])
+                    n += 1
+                j += 1
+            i += 1
+        p += 1
+    errors = np.array(errors)
+  #  shape = errors.shape
+ #   errors = errors[np.bitwise_not(np.isnan(errors))]
     
-    b = np.linspace(1,10,100)
-    pa = np.linspace(-np.pi/2,np.pi/2,100)
+    f,(ax1,ax2,ax3) = plt.subplots(3,sharex=False,sharey=True)
+    ax1.hist(errors[:,0],bins=100)
+    ax2.hist(errors[:,1],bins=100)
+    ax3.hist(errors[:,2],bins=100)
 
-    i = 0
-    while i < 100:
-        j = 0
-        while j < 100:
-            while n < 100:
-                bmaj = b[i]
-                bmin = b[j]
-                bpa = ba[n]
-                A,B,C = elliptic2quadratic(bmaj,bmin,bpa)
-                if bmin > bmaj:
-                    break
-                n += 1
-            j += 1
-        i += 1
+    plt.show()
 if __name__ == '__main__':
+    testError()
     #psf
     bmaj = 1.
     bmin = 0.5
