@@ -55,7 +55,7 @@ def quadratic2elliptic(A,B,C,D=0,E=0,F=-np.log(2)):
         temp = bmin
         bmin = bmaj
         bmaj = temp
-    bpa = phi - np.pi/2.#starts at y
+    bpa = phi# - np.pi/2.#starts at y
     if E==0 and D==0:
         return bmaj,bmin,bpa*180./np.pi
     return bmaj,bmin,bpa*180./np.pi,xc,yc
@@ -227,7 +227,28 @@ def psfTGSS1(dec):
     else:
         return 25.,25./np.cos(np.pi*(dec-19.0836824)/180.),0.
 
+def testError():
+    bmajp = 1,
+    bminp = 0.5,
+    A2,B2,C2 = elliptic2quadratic(bmajp,bminp,0)    
+    
+    b = np.linspace(1,10,100)
+    pa = np.linspace(-np.pi/2,np.pi/2,100)
 
+    i = 0
+    while i < 100:
+        j = 0
+        while j < 100:
+            while n < 100:
+                bmaj = b[i]
+                bmin = b[j]
+                bpa = ba[n]
+                A,B,C = elliptic2quadratic(bmaj,bmin,bpa)
+                if bmin > bmaj:
+                    break
+                n += 1
+            j += 1
+        i += 1
 if __name__ == '__main__':
     #psf
     bmaj = 1.
