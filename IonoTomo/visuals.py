@@ -8,7 +8,7 @@ Create the visualization gui for PropSim
 Author: Joshua G. Albert albert@strw.leidenuniv.nl
 '''
 #reload(simulationToolkit)
-import simulationToolkit
+import SimulationToolkit
 
 #%matplotlib inline
 import numpy as np
@@ -21,16 +21,16 @@ class visual(object):
     def __init__(self,simConfigJson=None,logFile=None,help=False,**args):
         '''Get the args by passing help=True'''
         if help:
-            self.simTk(help=True)
+            SimulationToolkit.Simulation(help=True)
             exit(0)
-        self.simTk = simulationToolkit.Simulation(simConfigJson=simConfigJson,logFile=logFile,**args)
+        self.simTk = SimulationToolkit.Simulation(simConfigJson=simConfigJson,logFile=logFile,**args)
         self.log = self.simTk.log
         self.curWavelength = self.simTk.getWavelength()
         self.curFrequency = self.simTk.getFrequency()
         self.speedoflight = self.simTk.speedoflight
         self.minLayer = self.simTk.getMinLayer()
         self.maxLayer = self.simTk.getMaxLayer()
-        self.curLayer = self.maxLayer#sky without propagation
+        self.curLayer = self.maxLayer#sky 
         self.minTime = self.simTk.getMinTime()
         self.maxTime = self.simTk.getMaxTime()
         self.curTime = self.minTime

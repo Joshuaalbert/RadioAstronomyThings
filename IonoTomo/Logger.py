@@ -13,13 +13,14 @@ class Logger(object):
             self.file = []
         if logFile is not None:
             try:
-                file = open(logFile,"a+")
+                file = open(logFile,"w")
                 self.file.append(file)
             except:
                 print("Failed to open log file {0}".format(logFile))
         if len(self.file) == 0:
             print("No logger files!")
             exit(1)
+        #print("Using log files: {}".format(self.file))
     def __exit__(self):
         for file in self.file:
             try:
@@ -27,7 +28,7 @@ class Logger(object):
             except:
                 pass
     def log(self,message):
-        for file in self.file:
-            file.write("{0}\n".format(message))
-            file.flush()
+        for f in self.file:
+            f.write("{0}\n".format(message))
+            f.flush()
 

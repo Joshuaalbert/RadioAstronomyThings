@@ -14,75 +14,25 @@ from sys import stdout
 import json
 import h5py
 import os
-import astropy.coordinates as ac
-import astropy.units as au
 import astropy.time as at
-import skyComponents
-from Logger import Logger
+
 #Things we've made
-from Atmosphere import *
-from SkyModel import *
-
-class RadioArray(object):
-    def __init__(self,logger,arrayFile = None,name = None,msFile=None,numAntennas=0,earthLocs=None):
-        self.log = logger
-        self.locs = []
-        if arrayFile is not None:
-            self.arrayFile = arrayFile
-            self.loadArrayFile(arrayFile)
-    def loadArrayFile(self,arrayFile):
-        '''Loads a csv where each row is x,y,z in geocentric coords of the antennas'''
-        d = np.genfromtxt(arrayFile)
-        i = 0
-        locs = []
-        while i < d.shape[0]:
-            earthLoc = ac.SkyCoord(x=d[i,0]*au.m,y=d[i,1]*au.m,z=d[i,2]*au.m,frame='itrs')
-            locs.append(earthLoc)
-            i += 1
-        self.addLocs(locs)
-    def saveArrayFile(self,arrayFile):
-        pass
-    def loadMsFile(self,msFIle):
-        '''Get antenna positions from ms, array name, frequency'''
-        pass
-
-    def addLocs(self,locs):
-        '''Add antenna locations. Each location is an EarthLocation.'''
-        i = 0
-        while i < len(locs):
-            self.locs.append(locs[i])
-            i += 1
-        self.calcCenter()
-    def calcCenter(self):
-        '''calculates the centroid of the array based on self.locs returns the EarthLocation of center'''
-        r0 = np.array([0,0,0])*au.m
-        i = 0
-        while i < len(self.locs):
-            locgc = self.locs[i].earth_location.geocentric
-            r0 += np.array([locgc[0].to(au.m).value,
-                              locgc[1].to(au.m).value,
-                              locgc[2].to(au.m).value])*au.m
-            i += 1
-        r0 /= float(len(self.locs))
-        self.center = ac.SkyCoord(x=r0[0],y=r0[1],z=r0[2],frame='itrs')
-        self.log("Center of array: {0}".format(self.center))
-        return self.center
-    
-    def getCenter(self):
-        try:
-            return self.center
-        except:
-            self.calcCenter()
-            return self.center
+from Logger import Logger
+from Atmosphere import Atmosphere
+from SkyModel import SkyModel
+from RadioArray import RadioArray
 
 
-class Simulation(Logger):
+
+class Simulation(object):
     def __init__(self,simConfigJson=None,logFile=None,help=False,**args):
-        super(Simulation,self).__init__(logFile=logFile)
+        #super(Simulation,self).__init__(logFile=logFile)
         #logger.__init__(self,logFile=logFile)
         if help:
             self.getAttributes(help)
             exit(0)
+        logger = Logger(logFile)
+        self.log = logger.log
         self.speedoflight = 299792458.
         self.simConfigJson = simConfigJson
         self.loadSimConfigJson(simConfigJson)
@@ -163,6 +113,7 @@ class Simulation(Logger):
         if not os.path.isdir(self.dataFolder):
             try:
                 os.makedirs(self.dataFolder)
+                self.log("Making data directory {0}".format(self.dataFolder))
             except:
                 self.log("Failed to create {0}: ".format(self.dataFolder))
                 exit(1)
@@ -175,12 +126,12 @@ class Simulation(Logger):
         else:
             self.saveSimConfigJson(simConfigJson)
         #set skymodel
-        self.skyModel = SkyModel(self.skyModelFile)
+        self.skyModel = SkyModel(self.skyModelFile,log=self.log)
         #set array
-        if self.arrayFile is not None:
-            self.radioArray = RadioArray(self.log,arrayFile = self.arrayFile)
+        if self.arrayFile is not "":
+            self.radioArray = RadioArray(arrayFile = self.arrayFile,log =self.log)
         else:
-            self.radioArray = RadioArray(self.log)
+            self.radioArray = RadioArray(log = self.log)
         #set frequency
         try:
             self.setFrequency(self.frequency)
@@ -188,9 +139,12 @@ class Simulation(Logger):
             self.setWavelength(self.wavelength)
         #time slices
         nsample = np.ceil(self.obsLength/self.sampleTime)
-        timeInit = at.Time(self.obsStart,format='isot',scale='utc').gps
-        self.timeSlices = at.Time(np.linspace(timeInit,timeInit+sample*self.sampleTime,nsample+1),format='gps',scale='utc')
-        self.atmosphere = Atmosphere(self.radioArray.getCenter(),self.timeSlices)#shall be it's own thing eventually
+        self.timeInit = at.Time(self.obsStart,format='isot',scale='utc')
+        self.timeSlices = at.Time(np.linspace(self.timeInit.gps,self.timeInit.gps+nsample*self.sampleTime,nsample+1),format='gps',scale='utc')
+        #layers
+        
+        #atmosphere is a box centered over the radio array, it makes data at timeslices and layers
+        self.atmosphere = Atmosphere(self.radioArray.getCenter(),self.timeSlices,wavelength=self.getWavelength())#shall be it's own thing eventually
         self.log("Starting computations... please wait.")
         self.compute()
         self.log("Finished computations... enjoy.")
@@ -200,9 +154,9 @@ class Simulation(Logger):
         self.startSimulation()
         #change things 
                 
-    def log(self,message):
-        stdout.write("{0}\n".format(message))
-        stdout.flush()
+    #def log(self,message):
+    #    stdout.write("{0}\n".format(message))
+    #    stdout.flush()
     def loadSimConfigJson(self,simConfigJson):
         '''extract sim config from json, and then call initializeSimulation'''
         if simConfigJson is None:
@@ -212,10 +166,14 @@ class Simulation(Logger):
         except:
             self.log("No file: {0}".format(simConfigJson))
             exit(1)
-        jobject = json.load(f)
+        try:
+            jobject = json.load(f)
+            self.log("Loaded from {0}:\n{1}".format(simConfigJson,json.dumps(jobject,sort_keys=True, indent=4, separators=(',', ': '))))
+            self.initializeSimulation(**jobject)
+        except:
+            self.log("File corrupt: {0}".format(simConfigJson))
         f.close()
-        self.log("Loaded from {0}:\n{1}".format(simConfigJson,json.dumps(jobject,sort_keys=True, indent=4, separators=(',', ': '))))
-        self.initializeSimulation(**jobject)
+        
         
     def saveSimConfigJson(self,simConfigJson):
         '''Save config in a json to load later.'''
@@ -224,13 +182,13 @@ class Simulation(Logger):
             jobject = {}
             attributes = self.getAttributes()
             for attr in attributes.keys():
-                jobject[attr] = getattr(self,attr,attributes[attr][1])
-                if attributes[attr][0] == np.array:#can't store np.array
+                jobject[attr] = getattr(self,attr,attributes[attr][0](attributes[attr][1]))
+                if type(jobject[attr]) == np.ndarray:#can't store np.array
                     jobject[attr] = list(jobject[attr])
-                if attributes[attr][0] == at.core.Time:#can't store np.array
+                if type(jobject[attr]) == at.core.Time:#can't store np.array
                     jobject[attr] = jobject[attr].isot
             try:
-                f = open(simConfigJson,'w+')
+                f = open(simConfigJson,'w')
                 json.dump(jobject,f,sort_keys=True, indent=4, separators=(',', ': '))
                 self.log("Saved configuration in: {0}".format(simConfigJson))
                 self.log("Stored:\n{0}".format(json.dumps(jobject,sort_keys=True, indent=4, separators=(',', ': '))))
@@ -278,10 +236,10 @@ class Simulation(Logger):
         return (np.random.uniform(size=[10,10]),(-1,1,'rand'),(-1,1,'rand'))
     def getLayerHeight(self,layerIdx):
         '''Get layer height in km'''
-        return self.layerHeights[layer]
+        return self.layerHeights[layerIdx]
     def getTimeSlice(self,timeIdx):
         '''return time in seconds since start of simulation'''
-        return self.timeSlices[time]
+        return self.timeSlices[timeIdx].gps - self.timeInit.gps
     def compute(self):
         '''Given the parameters simulate the ionotomo, or load if precomputed'''
         if self.precomputed:

@@ -4,7 +4,7 @@
     "sampleTime":1.0,
     "obsLength":600.0,
     "skyModelFile":"TestSM.csv",
-    "dataFolder": "",
+    "dataFolder": "0",
     "pointing": [62.0,14.0],
     "frequency": 1427583133.3333335,
     "layerHeights": [
