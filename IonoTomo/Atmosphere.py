@@ -1,22 +1,22 @@
 
 # coding: utf-8
 
-# In[6]:
+# In[13]:
 
 import numpy as np
 import astropy.coordinates as ac
 import astropy.units as au
 import astropy.time as at
+import os
 
-
-def fft2(A):
+def fft(A):
     '''Performs 2D fft then shifts'''
     return np.fft.fftshift(np.fft.fft2(A))
 
 def fftfreq(n,d=1):
     return np.fft.fftshift(np.fft.fftfreq(n,d=d))
 
-def ifft2(A):
+def ifft(A):
     '''Assumes A has shifted frequency to center.
     Unshifts and applies ifft'''
     return np.fft.ifft2(np.fft.ifftshift(A))
@@ -46,13 +46,27 @@ class Atmosphere(object):
     
     def initialize(self,**args):
         '''Any special things for atmosphere come in args'''
-        self.xangleres = 1./3600.*np.pi/180.# 60 arcsec = 1 arcmin in rad
-        self.yangleres = 1./3600.*np.pi/180.# 60 arcsec = 1 arcmin in rad
+        self.xangleres = 30.*1./3600.*np.pi/180.# 60 arcsec = 1 arcmin in rad
+        self.yangleres = 30.*1./3600.*np.pi/180.# 60 arcsec = 1 arcmin in rad
         self.zres = 1000.#1000m = 1km
         try:
             self.wavelength = args['wavelength']
         except:
             self.wavelength = 0.21
+        try:
+            self.saveFile = args['atmosphereData']
+            if self.saveFile == "":
+                self.save = False
+            else:
+                self.save = True
+        except:
+            self.save = False
+        try:
+            self.load=args['loadAtmosphere']
+            #if self.load:#override save
+                #self.save = False
+        except:
+            self.load=False
         self.defineBox()
         self.defineCells()
         #should be ready to simulate after this finishes with a call to run()
@@ -96,20 +110,49 @@ class Atmosphere(object):
         '''Get the layer width in m (this is not layer from radioArray to pointing but the atmospheric layer)'''
         return self.zdim/self.Nz
 
-    def Kolmogorov(self, Q, r0,alpha ):
+    def Kolmogorov(self, Q, r0,alpha=5./3.):
         '''Kolmogorov turbulence says '''
         return 0.023 * (Q*r0+(1e-15))**(-alpha)
 
-    def vonKarman(self, Q, r0, L0, l0 ,alpha):
+    def vonKarman(self, Q, r0, L0, l0 ,alpha=5./3.):
         '''min scale r0, outer scale l0'''
-        return 0.0299 * (r0)**(-alpha)/( Q**2 + L0**-2 )**((alpha + 1.)/2.) * numpy.exp(-Q**2 * l0**2 )
+        return 0.0299 * (r0+1e-15)**(-alpha)/( Q**2 + L0**-2 )**(2.*alpha+1.) * numpy.exp(-Q**2 * l0**2)
+
+    def randomBlobs(self,number=100):
+        '''Lets blobs of electrons move around.'''
+        self.log("Generating random blobs in atmosphere")
+        lonmask = np.random.randint(np.size(self.longitudes),size = number)
+        latmask = np.random.randint(np.size(self.latitudes),size = number)
+        zmask = np.random.randint(np.size(self.heights), size = number)
+        lon = self.longitudes[lonmask]
+        lat = self.latitudes[latmask]
+        hei = self.heights[zmask]
+        blobVel = np.random.uniform(low = -1, high = 1, size=[number,3])#units of xres/obs
+        scale = np.random.uniform(low = 500,high=3000,size=number)
+        
+        tecuZenithNight = 1e16/1000e3
+        i = 0
+        while i < len(self.times):
+            self.cells[i]['electronDensity'] = np.zeros([self.Nxangle,self.Nyangle,self.Nz])
+            itrsLocs = ac.SkyCoord(*ac.EarthLocation(lon = lon*au.deg, lat = lat*au.deg, height = hei*au.m).geocentric,frame='itrs')
+            b = 0
+            while b < number:
+                self.cells[i]['electronDensity'] += np.reshape(
+                    tecuZenithNight*np.exp(-self.itrsLocs.separation_3d(itrsLocs[b]).to(au.m).value**2/(scale[b])**2),
+                    np.shape(self.cells[i]['electronDensity']))
+                b += 1
+            lon += 180./np.pi*0.1*self.xangle*(float(i+1)/len(self.times))*blobVel[:,0]
+            lat += 180./np.pi*0.1*self.yangle*(float(i+1)/len(self.times))*blobVel[:,1]
+            hei += 0.1*self.zdim*(float(i+1)/len(self.times))*blobVel[:,2]
+            i += 1
     
-    def run(self):
-        '''fill in cells'''
+    def turbulence(self):
         #Let's put a simple simulation with a bulk layer at 350km and a turbluence layer 
         # at 600km
-        tecuZenithNight = 1e16/1000e3/self.tecu#electrons m^-3 when the sun is down
+        self.log("generating turbluence in the atmosphere.")
+        tecuZenithNight = 1e16/1000e3#electrons m^-3 when the sun is down
         tecuZenithDay = tecuZenithNight*10.
+        
         i = 0
         while i < len(self.times):
             #put cells in altaz frame
@@ -122,33 +165,59 @@ class Atmosphere(object):
             l = 0
             while l < self.Nz:
                 self.cells[i]['electronDensity'][:,:,l] = bulkTec*np.exp(-(self.heights[l] - self.arrayHeight - 350.*1000.)**2/(200.*1000.)**2)
-                l += 1              
+                l += 1 
+            i += 1
+        l = 0
+        while l < self.Nz:
             #turbluent layer around 600km for fun use 
-            gammaDay = 1.
-            gammaNight = np.random.uniform(low=2*0.69,high=1.5)#intema 2009
-            gamma = 0.5*(gammaDay + gammaNight)*np.cos(AltAzSun.alt.deg*np.pi/180.) + 0.5*(gammaDay - gammaNight)*np.sin(AltAzSun.alt.deg*np.pi/180.)
-            alpha = gamma + 2.
-            #which layer is turbulent
-            turbLayerIdx = np.argmin((self.heights - self.arrayHeight - 600.*1000.)**2)
+            #gammaDay = 1.
+            #gammaNight = np.random.uniform(low=2*0.69,high=1.5)#intema 2009
+            #gamma = 0.5*(gammaDay + gammaNight)*np.cos(AltAzSun.alt.deg*np.pi/180.) + 0.5*(gammaDay - gammaNight)*np.sin(AltAzSun.alt.deg*np.pi/180.)
+            #alpha = gamma + 2.
             #height of layer from earth center to get size of cell in meters
-            turbHeight = self.heights[turbLayerIdx]
-            xCellSize = turbHeight * self.xangleres
-            yCellSize = turbHeight * self.yangleres
+            height = self.heights[l]
+            xCellSize = height * self.xangleres
+            yCellSize = height * self.yangleres
             qx = fftfreq(self.Nxangle,d=xCellSize)
             qy = fftfreq(self.Nyangle,d=yCellSize)
             Qx, Qy = np.meshgrid(qx,qy)
             Q = np.sqrt(Qx**2 + Qy**2)
-            r0 = 500.#minimal scale size in m
+            r0 = 1000.#minimal scale size in m
             #Pne = |FFT(ne)|^2
-            Pne = np.random.uniform(size=[self.Nxangle,self.Nyangle])*self.Kolmogorov(Q,r0,alpha)
-            import pylab as plt
-            #plt.imshow(Pne)
-            #plt.show()
-            print fft2(np.sqrt(Pne))
-            turbLayer = np.abs(fft2(np.sqrt(Pne)))
-            turbLayerNe = tecuZenithNight*turbLayer/np.mean(turbLayer)
-            self.cells[i]['electronDensity'][:,:,turbLayerIdx] += turbLayerNe
-            i += 1
+            Pne = self.Kolmogorov(Q,r0)
+            i = 0
+            while i < len(self.times):
+                turbLayer = np.real(fft(np.random.uniform(size=[self.Nxangle,self.Nyangle])*np.sqrt(Pne)))
+                turbLayerNe = tecuZenithDay*(turbLayer-np.mean(turbLayer))/np.max(turbLayer)
+                if l > 0:
+                    expTau = self.zres/r0
+                    self.cells[i]['electronDensity'][:,:,l] += (1.-1./expTau)*self.cells[i]['electronDensity'][:,:,l-1] + (1./expTau)*tecuZenithDay*(turbLayer-np.mean(turbLayer))/np.max(turbLayer)
+                i += 1
+            if l % np.ceil(float(self.Nz)/100.) == 0:
+                self.log('.',endLine=False)
+            l += 1
+        self.log('')
+        
+    def run(self):
+        '''fill in cells'''
+        
+        if self.load:
+            if os.path.isfile(self.saveFile):
+                try:
+                    self.cells = np.load(self.saveFile)['arr_0'].item(0)
+                    self.log("Loaded atmosphere: {0}".format(self.saveFile))
+                    return
+                except:
+                    self.log("Wrong file type: {0}".format(self.saveFile))
+            else:
+                self.log("Missing file: {0}".format(self.saveFile))
+            self.log('Could not load. Simulating.')
+        #self.turbulence()
+        self.randomBlobs(100)
+        if self.save:
+            np.savez(self.saveFile,self.cells)
+            self.log("Saved atmosphere to: {0}".format(self.saveFile))
+            
 
 if __name__=='__main__':
     #test cases
@@ -159,9 +228,4 @@ if __name__=='__main__':
     times = at.Time(np.linspace(0,10000,10),format='gps',scale='utc')
     A = Atmosphere(radioArray=radioArray,boxSize=(10000,10000,10000),times=times,log=log,wavelength=1.)
     A.run()
-
-
-# In[ ]:
-
-
 

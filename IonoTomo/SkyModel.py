@@ -88,6 +88,10 @@ class SkyModel(object):
         self.dec = dec+r * np.sin(theta*np.pi/180.)
         self.S = np.abs(np.random.normal(loc= 1e-2,scale = 1.,size=N)**2)*5.#up to 5Jy
         self.alpha = np.random.normal(loc= -0.7,scale = 0.5,size=N)#-2 to 0 alpha
+    def fillDelta(self,L,M,frame,pointing,frequency):
+        '''fill out the array'''
+        diffres = 25./3600.*np.pi/180.
+        return np.exp(-((L-0)**2 + (M-0)**2)/diffres**2)
         
 if __name__=='__main__':
     SM = SkyModel(nu0=150e6)

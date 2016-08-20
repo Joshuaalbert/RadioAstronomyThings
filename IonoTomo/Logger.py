@@ -27,8 +27,11 @@ class Logger(object):
                 file.close()
             except:
                 pass
-    def log(self,message):
+    def log(self,message,endLine=True):
         for f in self.file:
-            f.write("{0}\n".format(message))
+            if endLine:
+                f.write("{0}\n".format(message))
+            else:
+                f.write("{0}".format(message))
             f.flush()
 
