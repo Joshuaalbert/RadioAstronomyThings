@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[2]:
 
 '''
 Create the visualization gui for PropSim
@@ -16,6 +16,7 @@ import pylab as plt
 from sys import stdout
 from matplotlib.widgets import RadioButtons, Cursor, Slider, Button
 from TextBoxWidget import TextBox
+get_ipython().magic(u'matplotlib.inline')
 
 class visual(object):
     def __init__(self,simConfigJson=None,logFile=None,help=False,**args):
@@ -358,7 +359,7 @@ class visual(object):
         dataCaller = self.dataSelectionCallers[label]
         if dataCaller == None:
             self.log("No attached data caller for: {0}".format(label))
-            self.dataCaller = lambda time,layer: (np.random.uniform(size=[10,10]),(-1,1,'rand'),(-1,1,'rand'))#(2D array, (xaxis,'units'), (yaxis,'units')
+            self.dataCaller = lambda time,layer: (np.random.uniform(size=[10,10]),(-1,1,'rand'),(-1,1,'rand'),(0,1))#(2D array, (xaxis,'units'), (yaxis,'units')
             self.curDataSelected = None
         else:
             self.dataCaller = dataCaller
@@ -460,15 +461,15 @@ class visual(object):
     def getCurLayerHeight(self):
         '''returns height of current layer in km.'''
         #use simTK eventually to get the height
-        return self.curLayer*100.
+        return self.simTk.getLayerHeight(self.curLayer)
     def getCurTimeSeconds(self):
         '''returns time of current frame in seconds.'''
         #use simTK eventually to get the height
-        return self.curTime*30.
+        return self.simTk.getTimeSlice(self.curTime)
     def updateData(self):
         '''this is called when layer, time, wavelength, or data caller are changed which draws the new image'''
         #self.log("Updating {0} at {1} and {2}".format(self.curDataSelected,self.curTime,self.curLayer))
-        img,xaxis,yaxis = self.dataCaller(self.curTime,self.curLayer)
+        img,xaxis,yaxis,caxis = self.dataCaller(self.curTime,self.curLayer)
         x1,x2,xunits = xaxis[0],xaxis[1],xaxis[2]
         y1,y2,yunits = yaxis[0],yaxis[1],yaxis[2]
         self.imageAxes.clear()
@@ -487,22 +488,18 @@ plt.show()
 
 # In[ ]:
 
-
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
+for j in range(4):
+    sums = []
+    for i in range(1000):
+        sums.append(np.sum(gui.simTk.atmosphere.cells[j]['electronDensity'][:,:,i]))
+    plt.plot(sums)
+plt.show()
+#gui.simTk.tau[0][1]-gui.simTk.tau[0][2]
 
 
 # In[2]:
 
-
+gui.simTk.atmosphere.cells[0]['electronDensity']
 
 
 # In[ ]:
