@@ -39,11 +39,20 @@ class Propagation(object):
     def calcFresnelZone(self,layerWidth,wavelength,n=1):
         '''return in radians max of sqrt(n lambda d1 d2/(d1+d2))'''
         return np.sqrt(n*layerWidth*wavelength)/2.#m
-        
-    def propagateForward(self):
-        '''Propagate sky component forward.
+    
+    def spherical2cartesian(self,theta,phi,r=1):
+        x = r*np.cos(theta)*np.sin(phi)
+        y = r*np.sin(theta)*np.sin(phi)
+        z = r*np.cos(phi)
+    
+    def calculateWaveVector(self,layerIdx,x,y):
+        kz = 2*np.pi*self.layers[layerIdx].
+    def propagateForward(self, x,y,z):
         '''
-        layerIdx = len(self.layers) - 1        
+        Propagate sky component forward from source to final layer. Initial layer is semi-infinite.
+        '''
+        layerIdx = len(self.layers) - 1
+        apLoc = 
         Mtotinv = np.array([[1,0],[0,1]],dtype=type(1j))
         while layerIdx >= 0:
             #get cells = 

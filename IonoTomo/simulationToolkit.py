@@ -64,6 +64,21 @@ def sumLayers(A,dim,lower,upper,heights):
         res += 2*view[j]
         j += 2
     return h/3.*res
+
+def regrid(A,shape,*presampledAx):
+    '''Uses fft to regrid ...'''
+    n = len(shape)
+    if len(presampledAx) != n:
+        print("wrongsize sample axis")
+        return
+    B = np.copy(A)
+    resampledAx = []
+    i = 0
+    while i < n:
+        B,t = resample(B,shape[i],t=presampledAx[i],axis=i)
+        resampledAx.append(t)
+        i += 1
+    return B,resampledAx
     
 
 class Simulation(object):
@@ -404,30 +419,38 @@ class Simulation(object):
             self.refractiveIndex[timeIdx] = np.array(refractiveIndex)
             self.tau[timeIdx] = np.array(tau)                
             timeIdx += 1
-        #propagate skyModel
-        self.log("Propagating the sky model.")
+            
+        #propagate distortions
+        self.log("Propagating the phase distortions/sky model.")
+        #determine image size
         #Umax = self.radioArray.baselines....
-        Umax = 25000/self.getWavelength()
+        Umax = 25000/self.getWavelength()#gmrt make auto 
         Vmax = 25000/self.getWavelength()
         lres = 1./Umax#rad
         mres = 1./Vmax#rad
-        Nl = self.radioArray.getFov(self.getWavelength())/lres
-        Nm = self.radioArray.getFov(self.getWavelength())/mres
-        l = np.linspace(-Nl*lres,Nl*lres,2*Nl)
-        m = np.linspace(-Nm*mres,Nm*mres,2*Nm)
+        cellsize = 2#shannon sampling
+        Nl = int(np.ceil(self.radioArray.getFov(self.getWavelength())/lres))*cellsize
+        Nm = int(np.ceil(self.radioArray.getFov(self.getWavelength())/mres))*cellsize
+        l = np.linspace(-self.radioArray.getFov(self.getWavelength())/2.,
+                        self.radioArray.getFov(self.getWavelength())/2.,Nl)
+        m = np.linspace(-self.radioArray.getFov(self.getWavelength())/2.,
+                        self.radioArray.getFov(self.getWavelength())/2.,Nm)
         L,M = np.meshgrid(l,m)
+        u = np.fft.fftshift(np.fft.fftfreq(Nl,d=np.abs(l[1]-l[0])))
+        v = np.fft.fftshift(np.fft.fftfreq(Nm,d=np.abs(m[1]-m[0])))
+        U,V = np.meshgrid(u,v)
         
         timeIdx = 0
         while timeIdx < len(self.timeSlices):
-            self.log(timeIdx)
-            Usky = self.skyModel.fillDelta(L,
-                                           M,
-                                           self.atmosphere.cells[timeIdx]['frame'],
-                                           self.pointing,self.getFrequency())
+            self.log("Computing time index: {0} of {1}".format(timeIdx, len(self.timeSlices)))
+            Isky = self.skyModel.angularIntensity(L,M,self.atmosphere.cells[timeIdx]['frame'],self.pointing,self.getFrequency())
+            Asky = np.sqrt(Isky)#arbitrary choice
+            Usky = ifft(Asky)#some phase offset arbitrary
             #self.radioArray.calcBaselines(self.)
-            self.intensity[timeIdx] = np.zeros([len(self.layerHeights),2*Nl,2*Nm])
+            self.intensity[timeIdx] = np.zeros([len(self.layerHeights),Nl,Nm])
             self.visibility[timeIdx] = np.zeros_like(self.intensity[timeIdx])
             layerIdx = len(self.layerHeights) - 1
+            self.visibility[timeIdx][layerIdx] = ifft(ISky)
             k = 2.*np.pi/self.getWavelength()
             Aprev = fft(Usky)
             zprev = self.layerHeights[-1]
@@ -436,7 +459,7 @@ class Simulation(object):
                 #propagate from above to current layer
                 zdiff = zprev - self.layerHeights[layerIdx]
                 zprev = self.layerHeights[layerIdx]
-                propKernel = np.exp(1j*k*np.sqrt((1-L**2 - M**2)) * zdiff)
+                propKernel = np.exp(1j*k*np.sqrt((1j-L**2 - M**2)) * zdiff)
                 A = Aprev * propKernel
                 transferKernel = np.sqrt(refractiveIndexPrev/self.refractiveIndex[timeIdx][layerIdx])*np.exp(-1j*self.tau[timeIdx][layerIdx])
                 refractiveIndexPrev = self.refractiveIndex[timeIdx][layerIdx]

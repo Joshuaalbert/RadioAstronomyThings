@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[20]:
+# In[9]:
 
 import numpy as np
 import pylab as plt
@@ -26,17 +26,20 @@ def autocorr(A):
     F = fft(A)
     return ifft(F*np.conjugate(F))
 
-def regrid2(A,shape,ax0=None,ax1=None):
+def regrid(A,shape,*presampledAx):
     '''Uses fft to regrid ...'''
-    if ax0 is not None:
-        B,tb = resample(A,shape[0],t=ax0,axis=0)
-    else:
-        B = resample(A,shape[0],axis=0)
-    if ax1 is not None:
-        C,tc = resample(B,shape[1],t=ax1,axis=1)
-    else:
-        C = resample(B,shape[1],axis=1)
-    return C
+    n = len(shape)
+    if len(presampledAx) != n:
+        print("wrongsize sample axis")
+        return
+    B = np.copy(A)
+    resampledAx = []
+    i = 0
+    while i < n:
+        B,t = resample(B,shape[i],t=presampledAx[i],axis=i)
+        resampledAx.append(t)
+        i += 1
+    return B,resampledAx
 
 def dft2(A,L,M,x,y):
     res = np.zeros_like(L,dtype=type(1j))*1j
@@ -58,6 +61,13 @@ def complexGaussianFilter(A,sigma=3,order=0):
     return gaussian_filter(np.real(A),sigma=sigma,order=order) + 1j*gaussian_filter(np.imag(A),sigma=sigma,order=order)
 
 '''propagate distortions'''
+A = np.random.uniform(size=[5,5,5])
+x = np.linspace(0,1,5)
+B,y = regrid(A,[10,11,120],*(x,x,x))
+print (B)
+print (y)
+plt.imshow(B[0,:,:],interpolation='nearest')
+plt.show()
 w = 100000
 up = np.linspace(-10,10,1000)
 dx=np.abs(up[1]-up[0])
@@ -83,9 +93,10 @@ plt.show()
     
 
 
-# In[2]:
+# In[6]:
 
-help(np.fft.fft)
+help(plt.imshow
+)
 
 
 # In[116]:

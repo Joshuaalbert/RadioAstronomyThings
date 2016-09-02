@@ -146,6 +146,9 @@ class Atmosphere(object):
             hei += 0.1*self.zdim*(float(i+1)/len(self.times))*blobVel[:,2]
             i += 1
     
+    def getLayerCenter(self,layerIdx):
+        return self.center.geocentrictrueecliptic.lon.deg, self.center.geocentrictrueecliptic.lat.deg, self.arrayHeight + (layerIdx+1)*self.getLayerWidth()
+    
     def turbulence(self):
         #Let's put a simple simulation with a bulk layer at 350km and a turbluence layer 
         # at 600km
