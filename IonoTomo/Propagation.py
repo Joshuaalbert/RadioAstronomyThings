@@ -8,7 +8,7 @@ from Logger import Logger
 from Layer import Layer
 
 class Propagation(object):
-    '''Defines propagation along l,m from source to observer'''
+    '''Defines propagation along l,m forwards and backwards'''
     def __init__(self,l,m,wavelength,log=None):
         if log is None:
             self.log = Logger().log
@@ -16,6 +16,7 @@ class Propagation(object):
             self.log = log
         self.l = l
         self.m = m
+        self.n = np.sqrt(1j - l**2 - m**2)
         self.wavelength = wavelength#m
         #snells law
         if l != 0:
@@ -51,6 +52,7 @@ class Propagation(object):
         '''
         Propagate sky component forward from source to final layer. Initial layer is semi-infinite.
         '''
+        k = self.getForwardWaveVector()
         layerIdx = len(self.layers) - 1
         apLoc = 
         Mtotinv = np.array([[1,0],[0,1]],dtype=type(1j))

@@ -74,8 +74,8 @@ class Atmosphere(object):
     def defineBox(self):
         '''defines the box given a radio array center'''
         self.center = self.radioArray.getCenter()#itrs frame
-        self.arrayHeight = self.center.geocentrictrueecliptic.distance.to(au.m).value
-        el = self.center.earth_location.geodetic
+        self.arrayHeight = self.radioArray.arrayHeight
+        el = self.center.geocentrictrueecliptic
         #wrap a box around the earth (this is bottom of box)
         self.xangle = self.xdim/self.arrayHeight
         self.yangle = self.ydim/self.arrayHeight
