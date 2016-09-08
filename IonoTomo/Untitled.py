@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[9]:
+# In[20]:
 
 import numpy as np
 import pylab as plt
@@ -61,13 +61,21 @@ def complexGaussianFilter(A,sigma=3,order=0):
     return gaussian_filter(np.real(A),sigma=sigma,order=order) + 1j*gaussian_filter(np.imag(A),sigma=sigma,order=order)
 
 '''propagate distortions'''
+l = np.linspace(-0.5,0.5,100)
+
+A = np.exp(-1j*2*np.pi*np.sqrt(1-l**2))
+U = ifft(A)
+#plt.plot(U)
+#plt.show()
+#plt.plot(fft(U))
+#plt.show()
 A = np.random.uniform(size=[5,5,5])
 x = np.linspace(0,1,5)
 B,y = regrid(A,[10,11,120],*(x,x,x))
 print (B)
 print (y)
-plt.imshow(B[0,:,:],interpolation='nearest')
-plt.show()
+#plt.imshow(B[0,:,:],interpolation='nearest')
+#plt.show()
 w = 100000
 up = np.linspace(-10,10,1000)
 dx=np.abs(up[1]-up[0])
@@ -78,6 +86,7 @@ m = l
 L,M = np.meshgrid(l,m)
 u = 0
 v = 0
+#k = np.exp(1j*2*np.pi*w)*np.exp(-1j*np.pi*w*(U**2+V**2))
 k = complexGaussianFilter(np.exp(1j*2*np.pi*w*(-2/w**2*(u*U + v*V) + V**2/w**2 + U**2/w**2)))
 #k = w/(1j*distance)*exp(1j*2*np.pi*0.5/distance*Z)
 #Af = dft2(k,L,M,up,up)*dx**2

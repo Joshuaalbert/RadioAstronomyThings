@@ -74,8 +74,8 @@ class Atmosphere(object):
     def defineBox(self):
         '''defines the box given a radio array center'''
         self.center = self.radioArray.getCenter()#itrs frame
-        self.arrayHeight = self.radioArray.arrayHeight
-        el = self.center.geocentrictrueecliptic
+        self.arrayHeight = self.center.geocentrictrueecliptic.distance.to(au.m).value
+        el = self.center.earth_location.geodetic
         #wrap a box around the earth (this is bottom of box)
         self.xangle = self.xdim/self.arrayHeight
         self.yangle = self.ydim/self.arrayHeight
@@ -99,11 +99,9 @@ class Atmosphere(object):
         i = 0
         while i < len(self.times):
             self.cells[i] = {}
-            #enables getting alt and az of sources and cells, they won't move for itrs frame things but will for icrs
-            self.cells[i]['frame'] = ac.AltAz(obstime=self.times[i],location=self.radioArray.getCenter(),obswl=self.wavelength*au.m)
             #for now store all in memory, but could replace with an hdf5 location
             #also enables simply loading a precomputed siulation
-            self.cells[i]['electronDensity'] = np.zeros([self.Nxangle,self.Nyangle,self.Nz])
+            self.cells[i] = np.zeros([self.Nxangle,self.Nyangle,self.Nz])
             i += 1
     
     def getLayerWidth(self):
@@ -133,13 +131,13 @@ class Atmosphere(object):
         tecuZenithNight = 1e16/1000e3
         i = 0
         while i < len(self.times):
-            self.cells[i]['electronDensity'] = np.zeros([self.Nxangle,self.Nyangle,self.Nz])
+            self.cells[i] = np.zeros([self.Nxangle,self.Nyangle,self.Nz])
             itrsLocs = ac.SkyCoord(*ac.EarthLocation(lon = lon*au.deg, lat = lat*au.deg, height = hei*au.m).geocentric,frame='itrs')
             b = 0
             while b < number:
-                self.cells[i]['electronDensity'] += np.reshape(
+                self.cells[i] += np.reshape(
                     tecuZenithNight*np.exp(-self.itrsLocs.separation_3d(itrsLocs[b]).to(au.m).value**2/(scale[b])**2),
-                    np.shape(self.cells[i]['electronDensity']))
+                    np.shape(self.cells[i]))
                 b += 1
             lon += 180./np.pi*0.1*self.xangle*(float(i+1)/len(self.times))*blobVel[:,0]
             lat += 180./np.pi*0.1*self.yangle*(float(i+1)/len(self.times))*blobVel[:,1]
@@ -161,13 +159,13 @@ class Atmosphere(object):
             #put cells in altaz frame
             #AltAzCells = self.itrsLocs.transform_to(self.cells[i]['frame'])
             sunLoc = ac.get_body('Sun',self.times[i],location = self.radioArray.getCenter().earth_location)
-            AltAzSun = sunLoc.transform_to(self.cells[i]['frame'])
+            AltAzSun = sunLoc.transform_to(self.radioArray.frames[i])
             #due to sun the ne is:
             bulkTec = 0.5*(tecuZenithNight + tecuZenithDay)*np.cos(AltAzSun.alt.deg*np.pi/180.) + 0.5*(tecuZenithDay - tecuZenithNight)*np.sin(AltAzSun.alt.deg*np.pi/180.)
             #spatially located around 350km +- 200km
             l = 0
             while l < self.Nz:
-                self.cells[i]['electronDensity'][:,:,l] = bulkTec*np.exp(-(self.heights[l] - self.arrayHeight - 350.*1000.)**2/(200.*1000.)**2)
+                self.cells[i][:,:,l] = bulkTec*np.exp(-(self.heights[l] - self.arrayHeight - 350.*1000.)**2/(200.*1000.)**2)
                 l += 1 
             i += 1
         l = 0
@@ -194,7 +192,7 @@ class Atmosphere(object):
                 turbLayerNe = tecuZenithDay*(turbLayer-np.mean(turbLayer))/np.max(turbLayer)
                 if l > 0:
                     expTau = self.zres/r0
-                    self.cells[i]['electronDensity'][:,:,l] += (1.-1./expTau)*self.cells[i]['electronDensity'][:,:,l-1] + (1./expTau)*tecuZenithDay*(turbLayer-np.mean(turbLayer))/np.max(turbLayer)
+                    self.cells[i][:,:,l] += (1.-1./expTau)*self.cells[i][:,:,l-1] + (1./expTau)*tecuZenithDay*(turbLayer-np.mean(turbLayer))/np.max(turbLayer)
                 i += 1
             if l % np.ceil(float(self.Nz)/100.) == 0:
                 self.log('.',endLine=False)

@@ -6,18 +6,18 @@
 import numpy as np
 
 class Layer(object):
-    def __init__(self,center,,cells,dx,dy,width,center):
+    def __init__(self,center,cells,dx,dy,width):
         '''width=np.inf is a semi-infinite layer'''
-        self.idx = idx
         self.cells = cells
         self.dx = dx
         self.dy = dy
-        self.width = width
+        self.x = center[1]+np.linspace(-self.cells.shape[1]*dx/2.,self.cells.shape[1]*dx/2.,self.cells.shape[1])
+        self.y = center[0]+np.linspace(-self.cells.shape[0]*dy/2.,self.cells.shape[0]*dy/2.,self.cells.shape[0])
+        self.z = z
         self.center = center
-        self.c0 = self.cells.shape[]
     
     def index2coords(self,xidx,yidx):
-        self.c0[0] + xidx*self.dx
+        return self.x[xidx],self.y[yidx]
             
     def getRefractiveIndex(self,x,y):
         '''Get refractive index of a particular cell'''
