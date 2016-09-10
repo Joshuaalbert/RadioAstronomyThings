@@ -1,8 +1,4 @@
 
-# coding: utf-8
-
-# In[ ]:
-
 import numpy as np
 from Logger import Logger
 from Layer import Layer
@@ -357,10 +353,9 @@ def propagateBackwards(l,m,s,x0,xi,obstime,NObj):
     ptheta0 = n0*r0*atheta
     pphi0 = n0*r0*np.sin(theta0)*aphi
     rmax = r0*2
-    #ODE = ode(eulerEqns, eulerJac).set_integrator('vode', method='bdf').set_jac_params(NObj)
-    ODE = ode(eulerEqns).set_integrator('vode', method='bdf')
+    ODE = ode(eulerEqns, eulerJac).set_integrator('vode', method='bdf')
     ODE.set_initial_value([pr0,ptheta0,pphi0,r0,theta0,phi0], 0)#set initit and time=0
-    ODE.set_f_params(NObj)
+    ODE.set_f_params(NObj).set_jac_params(NObj)
     dt = (rmax-r0)/100.#sections of arc. Maybe should be larger
     sols = []
     while r < rmax and ODE.successful():
@@ -368,17 +363,17 @@ def propagateBackwards(l,m,s,x0,xi,obstime,NObj):
         psi = np.arccos(C/r/NObj.compute_n(r,theta,phi))-alt
         sols.append([pr,ptheta,pphi,r,theta,phi,psi])
         pathlength = ODE.t
-        print(pathlength,pr,ptheta,pphi,r,theta,phi)
-    import pylab as plt
+        #print(pathlength,pr,ptheta,pphi,r,theta,phi)
+    #import pylab as plt
     sols= np.array(sols)
-    plt.plot(sols[:,3],sols[:,4])
+    #plt.plot(sols[:,3],sols[:,4])
     #plt.scatter(sols[:,3],sols[:,6])
-    plt.plot(sols[:,3],sols[:,5])
-    plt.show()
+    #plt.plot(sols[:,3],sols[:,5])
+    #plt.show()
     
     
 if __name__=='__main__':
-    l=0.1
+    l=0
     m=0
     obstime = at.Time('2000-01-01T00:00:00.000',format='isot',scale='utc')
     x0 = ac.ITRS(*ac.EarthLocation(lon=0*au.deg,lat=0*au.deg,height=0*au.m).geocentric)
@@ -388,14 +383,13 @@ if __name__=='__main__':
     X,Y,Z = np.meshgrid(xvec,yvec,zvec)
     R = np.sqrt(X**2 + Y**2 + Z**2)
     ndata = 1 + 0.1*np.cos(R/50000.)
-    ndata = 0.95+0.1*np.random.uniform(size=[100,100,100])
+    #ndata = np.random.uniform(size=[100,100,100])
     NObj = NObject(ndata,xvec,yvec,zvec)
     xi = ac.ITRS(*ac.EarthLocation(lon=0*au.deg,lat=0.001*au.deg,height=0*au.m).geocentric)
     s = ac.SkyCoord(ra=0*au.deg,dec=0*au.deg,frame='icrs')
-    propagateBackwards(l,m,s,x0,xi,obstime,NObj)
     import time
     t1 = time.time()
-    i = 20
+    i = 0
     while i < 20:
         propagateBackwards(l,m,s,x0,xi,obstime,NObj)
         i += 1
@@ -411,9 +405,5 @@ if __name__=='__main__':
         
  
         
-
-
-# In[ ]:
-
 
 
