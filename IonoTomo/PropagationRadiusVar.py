@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[ ]:
+# In[5]:
 
 import numpy as np
 from Logger import Logger
@@ -17,6 +17,25 @@ def fft(A):
 
 def ifft(A):
     return np.fft.fftshift(np.ftt.ifftn(np.fft.ifftshift(A)))
+
+def transformCosines(theta1,phi1,theta2,phi2):
+    #switch theta and phi for this implementation
+    cosphi1 = np.cos(theta1)
+    sinphi1 = np.sin(theta1)
+    costheta1 = np.cos(phi1)
+    sintheta1 = np.sin(phi1)
+    cosphi2 = np.cos(theta2)
+    sinphi2 = np.sin(theta2)
+    costheta2 = np.cos(phi2)
+    sintheta2 = np.sin(phi2)
+    costheta12 = np.cos(phi1-phi2)
+    sintheta12 = np.sin(phi1-phi2)
+    
+    return np.array([[cosphi1*cosphi2 + costheta12*sinphi1*sinphi2,sinphi1*sintheta12,cosphi2*costheta12*sinphi1 - cosphi1*sinphi2],
+       [cosphi2*sinphi1 - cosphi1*costheta12*sinphi2,-cosphi1*sintheta12,-cosphi1*cosphi2*costheta12 - sinphi1*sinphi2],
+       [sinphi2*sintheta12,-costheta12,cosphi2*sintheta12]])
+
+
 
 def ITRS2Frame(theta,phi):
     s1,s2 = np.sin(theta),np.sin(phi)
@@ -337,6 +356,7 @@ class numericDiff(object):
             gzz = (self.data[nx,ny,nz+2] - 2*self.dta[nx,ny,nz+1] + self.data[nx,ny,nz])/self.dz**2
             self.two = (gxx,gxy,gxz,gyy,gyz,gzz)
             return self.two
+        
 
 #class NObject(splineFit):
 class NObject(numericDiff):
@@ -377,13 +397,16 @@ def eulerEqns(t,p, nObj):
     n_r = n*r
     r2 = r*r
     
-    prdot = (ptheta**2 + pphi**2/sintheta**2)/(n_r*r2) + nr
-    pthetadot = costheta * pphi**2/(n_r*r*sintheta**3) + ntheta
-    pphidot = nphi
-    rdot = pr/n
-    thetadot = ptheta/(n_r*r)
-    phidot = pphi/(n_r*r*sintheta**2)
-    return [prdot,pthetadot,pphidot,rdot,thetadot,phidot]
+    convFactor = np.sqrt(1 - ptheta**2/n_r**2 - pphi**2/n_r**2/sintheta**2)
+    
+    prdot = ((ptheta**2 + pphi**2/sintheta**2)/(n_r*r2) + nr)/convFactor
+    pthetadot = (costheta * pphi**2/(n_r*r*sintheta**3) + ntheta)/convFactor
+    pphidot = nphi/convFactor
+    #rdot = pr/n
+    sdot = 1/convFactor
+    thetadot = ptheta/(n_r*r)/convFactor
+    phidot = pphi/(n_r*r*sintheta**2)/convFactor
+    return [prdot,pthetadot,pphidot,sdot,thetadot,phidot]
     
 def eulerJac(t,p,nObj):
     pr = p[0]
@@ -490,18 +513,20 @@ def propagateBackwards(l,m,s,x0,xi,obstime,NObj,rmaxRatio,plot=False):
     rNum = np.sqrt(cosx0s**2 - r0**2 + rmax**2)
     #ODE = ode(eulerEqns, eulerJac).set_integrator('vode', method='bdf').set_jac_params(NObj)
     ODE = ode(eulerEqns).set_integrator('vode', method='bdf')
-    ODE.set_initial_value([pr0,ptheta0,pphi0,r0,theta0,phi0], 0)#set initit and time=0
+    ODE.set_initial_value([pr0,ptheta0,pphi0,0.,theta0,phi0], r0)#set initit and time=0
     ODE.set_f_params(NObj)
+    pr,ptheta,pphi,pathlength,theta,phi = ODE.integrate(rmax)
+    return pathlength
     dt = (rmax-r0)/100.#sections of arc. Maybe should be larger
     if plot:
         sols = []
     while r < rNum/np.abs(np.sin(theta_s)*np.sin(theta)*np.cos(phi_s - phi) + np.cos(theta_s)*np.cos(theta)) and ODE.successful():
-        pr,ptheta,pphi,r,theta,phi = ODE.integrate(ODE.t + dt)
+        pr,ptheta,pphi,s,theta,phi = ODE.integrate(ODE.t + dt)
         if plot:
-            pathlength = ODE.t
+            r = ODE.t
             psi = -np.arccos(C/r/NObj.compute_n(r,theta,phi))#+(alt+alt_)
-            sols.append([ODE.t,pr,ptheta,pphi,r,theta,phi,psi])
-            print(pathlength,pr,ptheta,pphi,r,theta,phi)
+            sols.append([ODE.t,pr,ptheta,pphi,s,theta,phi,psi])
+            print(pathlength,pr,ptheta,pphi,s,theta,phi)
     if plot:
         import pylab as plt
         sols= np.array(sols)
@@ -512,7 +537,7 @@ def propagateBackwards(l,m,s,x0,xi,obstime,NObj,rmaxRatio,plot=False):
         plt.plot(sols[:,4],sols[:,5])
         plt.show()
     return ODE.t
-
+    
 def plotPathLength(lvec,mvec,s,x0,xi,obstime,NObj,ramxRatio):
     pl = np.zeros([np.size(lvec),np.size(mvec)])
     i = 0
@@ -523,7 +548,6 @@ def plotPathLength(lvec,mvec,s,x0,xi,obstime,NObj,ramxRatio):
             pl[i,j] = propagateBackwards(l[i],m[j],s,x0,xi,obstime,NObj,2)
             j += 1
         i += 1
-    
     
 if __name__=='__main__':
     l=0.1
@@ -536,32 +560,17 @@ if __name__=='__main__':
     X,Y,Z = np.meshgrid(xvec,yvec,zvec)
     R = np.sqrt(X**2 + Y**2 + Z**2)
     ndata = 1 + 0.1*np.cos(R/50000.)
+    D = gaussianDecomposition(ndata,xvec,yvec,zvec)
+    D.fitParameters(2)
+
     #ndata = 0.95+0.1*np.random.uniform(size=[100,100,100])
     NObj = NObject(ndata,xvec,yvec,zvec)
-    xi = ac.ITRS(*ac.EarthLocation(lon=0*au.deg,lat=0.001*au.deg,height=0*au.m).geocentric)
+    xi = ac.ITRS(*ac.EarthLocation(lon=0*au.deg,lat=0.001*au.deg,height=0*au.m).geocentric)#100m from x0
     s = ac.SkyCoord(ra=0*au.deg,dec=0*au.deg,frame='icrs')
-    propagateBackwards(l,m,s,x0,xi,obstime,NObj,2)
-    l = np.linspace(-0.5,0.5,10)
-    m = np.linspace(-0.5,0.5,10)
-    pl = np.zeros([10,10])
-    i = 0
-    while i < len(l):
-        j = 0
-        while j < len(m):
-            print("doing:",i,j)
-            pl[i,j] = propagateBackwards(l[i],m[j],s,x0,xi,obstime,NObj,2)
-            j += 1
-        i += 1
-    import pylab as plt
-    plt.pl
-    plt.imshow(pl)
-    import time
-    t1 = time.time()
-    i = 20
-    while i < 20:
-        propagateBackwards(l,m,s,x0,xi,obstime,NObj)
-        i += 1
-    print(20./(time.time()-t1))
+    propagateBackwards(l,m,s,x0,xi,obstime,NObj,2,plot=True)
+    lvec = np.linspace(-0.5,0.5,10)
+    mvec = np.linspace(-0.5,0.5,10)
+    
     
     
     
@@ -573,6 +582,27 @@ if __name__=='__main__':
         
  
         
+
+
+# In[7]:
+
+def transformCosines(theta1,phi1,theta2,phi2):
+    #switch theta and phi for this implementation
+    cosphi1 = np.cos(theta1)
+    sinphi1 = np.sin(theta1)
+    costheta1 = np.cos(phi1)
+    sintheta1 = np.sin(phi1)
+    cosphi2 = np.cos(theta2)
+    sinphi2 = np.sin(theta2)
+    costheta2 = np.cos(phi2)
+    sintheta2 = np.sin(phi2)
+    costheta12 = np.cos(phi1-phi2)
+    sintheta12 = np.sin(phi1-phi2)
+    
+    return np.array([[cosphi1*cosphi2 + costheta12*sinphi1*sinphi2,sinphi1*sintheta12,cosphi2*costheta12*sinphi1 - cosphi1*sinphi2],
+       [cosphi2*sinphi1 - cosphi1*costheta12*sinphi2,-cosphi1*sintheta12,-cosphi1*cosphi2*costheta12 - sinphi1*sinphi2],
+       [sinphi2*sintheta12,-costheta12,cosphi2*sintheta12]])
+
 
 
 # In[ ]:
