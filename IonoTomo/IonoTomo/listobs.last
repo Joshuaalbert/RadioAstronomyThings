@@ -1,0 +1,20 @@
+taskname           = "listobs"
+vis                =  "/net/para12/data1/albert/products/goods-n-prefactor-results/linked_ms/L137859_SBgr000-10_uv.dppp.dpppaverage.MS/"
+selectdata         =  True
+spw                =  ""
+field              =  ""
+antenna            =  ""
+uvrange            =  ""
+timerange          =  ""
+correlation        =  ""
+scan               =  ""
+intent             =  ""
+feed               =  ""
+array              =  ""
+observation        =  ""
+verbose            =  True
+listfile           =  "lofar.cycle0.hba.listobs"
+listunfl           =  False
+cachesize          =  50
+overwrite          =  False
+#listobs(vis="/net/para12/data1/albert/products/goods-n-prefactor-results/linked_ms/L137859_SBgr000-10_uv.dppp.dpppaverage.MS/",selectdata=True,spw="",field="",antenna="",uvrange="",timerange="",correlation="",scan="",intent="",feed="",array="",observation="",verbose=True,listfile="lofar.cycle0.hba.listobs",listunfl=False,cachesize=50,overwrite=False)
