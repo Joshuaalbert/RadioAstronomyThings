@@ -100,6 +100,7 @@ class Plane(object):
             if p2 is None and p3 is None:
                 print("Not enough information")
                 return
+            #normal is in direction of p1p2 x p1p3
             a = p1[1]*(p2[2] - p3[2]) + p2[1]*(p3[2] - p1[2]) + p3[1]*(p1[2] - p2[2])
             b = p1[2]*(p2[0] - p3[0]) + p2[2]*(p3[0] - p1[0]) + p3[2]*(p1[0] - p2[0])
             c = p1[0]*(p2[1] - p3[1]) + p2[0]*(p3[1] - p1[1]) + p3[0]*(p1[1] - p2[1])
@@ -213,7 +214,7 @@ def intersectPlanePlane(plane1,plane2):
 
     n1n2 = plane1.n.dot(plane2.n)#3 + 3
     if n1n2 > 1 - epsFloat:
-        print "Parallel planes"
+        print ("Parallel planes")
         return False, None
     n1n1 = plane1.n.dot(plane1.n)#3 + 3
     n2n2 = plane2.n.dot(plane2.n)#3 + 3
@@ -227,7 +228,7 @@ def intersectPlanePlane(plane1,plane2):
     u = np.cross(plane1.n,plane2.n)#6 + 3
     uMag = np.linalg.norm(u)#
     if uMag < epsFloat:
-        print "Parallel planes"
+        print ("Parallel planes")
         return False,None
     u /= uMag
     i = np.argmax(u)
@@ -284,7 +285,7 @@ def centroidOfPlanes(planes):
 
 def coplanarPoints(points):
     if len(points) < 3:
-        print "Not enough points to test"
+        print ("Not enough points to test")
         return False,None
     if len(points) == 3:
         return True, Plane(*points)
@@ -360,11 +361,11 @@ def planesOfCuboid(center,dx,dy,dz):
 def boundPlanesOfCuboid(center,dx,dy,dz):
     '''return bounding planes of cuboid'''
     planes = []
-    
+    #make sure p1p2xp1p13 is pointing to center of cuboid
     planes.append(BoundedPlane([np.array(center) + np.array([-dx/2.,-dy/2.,-dz/2.]),
                                 np.array(center) + np.array([dx/2.,-dy/2.,-dz/2.]),
-                                np.array(center) + np.array([dx/2.,-dy/2.,dz/2.]),
-                                np.array(center) + np.array([-dx/2.,-dy/2.,dz/2.])]))
+                                np.array(center) + np.array([-dx/2.,-dy/2.,dz/2.]),
+                                np.array(center) + np.array([dx/2.,-dy/2.,dz/2.]),]))
     planes.append(BoundedPlane([np.array(center) + np.array([dx/2.,-dy/2.,-dz/2.]),
                                 np.array(center) + np.array([dx/2.,-dy/2.,dz/2.]),
                                 np.array(center) + np.array([dx/2.,dy/2.,dz/2.]),
@@ -427,9 +428,12 @@ class Voxel(object):
         return "Voxel: Center {0}\nVertices:\t{2}".format(self.centroid,self.vertices)
     
 class OctTree(Voxel):
-    def __init__(self,center=None,dx=None,dy=None,dz=None,boundingPlanes=None):
+    def __init__(self,center=None,dx=None,dy=None,dz=None,boundingPlanes=None,parent=None):
         super(OctTree,self).__init__(center,dx,dy,dz,boundingPlanes)
+        self.parent = parent
         self.children = []
+        self.hasChildren = False
+        self.lineSegments = {}
     def subDivide(self):
         '''Make eight voxels to partition this voxel'''
         if len(self.children)==8:
@@ -437,26 +441,55 @@ class OctTree(Voxel):
                 child.subDivide()
         else:
             self.children = []
+            self.hasChildren = True
             dx = self.dx/2.
             dy = self.dy/2.
             dz = self.dz/2.
-            self.children.append(OctTree(self.centroid - np.array([dx/2.,dy/2.,dz/2.]),dx,dy,dz))
-            self.children.append(OctTree(self.centroid - np.array([dx/2.,-dy/2.,-dz/2.]),dx,dy,dz))
-            self.children.append(OctTree(self.centroid - np.array([dx/2.,dy/2.,-dz/2.]),dx,dy,dz))
-            self.children.append(OctTree(self.centroid - np.array([dx/2.,-dy/2.,dz/2.]),dx,dy,dz))
-            self.children.append(OctTree(self.centroid - np.array([-dx/2.,dy/2.,dz/2.]),dx,dy,dz))
-            self.children.append(OctTree(self.centroid - np.array([-dx/2.,-dy/2.,-dz/2.]),dx,dy,dz))
-            self.children.append(OctTree(self.centroid - np.array([-dx/2.,dy/2.,-dz/2.]),dx,dy,dz))
-            self.children.append(OctTree(self.centroid - np.array([-dx/2.,-dy/2.,dz/2.]),dx,dy,dz))
+            #000
+            self.children.append(OctTree(self.centroid - np.array([dx/2.,dy/2.,dz/2.]),dx,dy,dz,parent=self))
+            #001
+            self.children.append(OctTree(self.centroid - np.array([dx/2.,dy/2.,-dz/2.]),dx,dy,dz,parent=self))
+            #010
+            self.children.append(OctTree(self.centroid - np.array([dx/2.,-dy/2.,dz/2.]),dx,dy,dz,parent=self))
+            #011
+            self.children.append(OctTree(self.centroid - np.array([dx/2.,-dy/2.,-dz/2.]),dx,dy,dz,parent=self))
+            #100
+            self.children.append(OctTree(self.centroid - np.array([-dx/2.,dy/2.,dz/2.]),dx,dy,dz,parent=self))
+            #101
+            self.children.append(OctTree(self.centroid - np.array([-dx/2.,dy/2.,-dz/2.]),dx,dy,dz,parent=self))
+            #110
+            self.children.append(OctTree(self.centroid - np.array([-dx/2.,-dy/2.,dz/2.]),dx,dy,dz,parent=self))
+            #111
+            self.children.append(OctTree(self.centroid - np.array([-dx/2.,-dy/2.,-dz/2.]),dx,dy,dz,parent=self))
         return self
+    def intersectPoint(self,point):
+        '''pass point onward'''
+        if self.hasChildren:
+            quad = 4*(point[0] > self.centroid[0]) + 2*(point[1] > self.centroid[1]) + ( point[2] > self.centroid[2])
+            res,point = self.children[quad].intersectPoint(ray)
+            
     def intersectRay(self,ray):
+        '''Intersect ray on all bounding planes and choose the shortest ray, and quadrant.
+        Propagate to children.'''
+        dist = []
         points = []
         for plane in self.boundingPlanes:
             res,point = intersectRayPlane(ray,plane)
-            if res:
+            if res:#ray hits this plane
                 res = plane.inHull(point)
-                if res:
+                if res:##Hits the within the bounded plane
+                    d = point - ray.origin
+                    dist.append(d.dot(d))
                     points.append(point)
+        if len(dist) == 0:
+            return False, None
+        indMin = np.argmin(dist)#closest to origin (should choose on correct side though)
+        if self.hasChildren:
+            point = points[indMin]
+            #relates to subdivide
+            quad = 4*(point[0] > self.centroid[0]) + 2*(point[1] > self.centroid[1]) + ( point[2] > self.centroid[2])
+            res,point = self.children[quad].intersectRay(ray)
+
         return len(points)>0,points   
     def __repr__(self):
         return "OctTree: center {0} children {1}".format(self.centroid,len(self.children)==8)
@@ -465,9 +498,9 @@ if __name__ == '__main__':
     
 
     octTree = OctTree(np.array([0,0,0]),1,1,1)
-    print octTree
+    print (octTree)
     octTree.subDivide().subDivide()
-    print octTree.children[0].children
+    print (octTree.children[0].children)
     exit(0)
     rays = []
     planes = []
@@ -482,15 +515,15 @@ if __name__ == '__main__':
     plane3 = Plane(ray3.origin,normal=ray3.dir)
     vox = Voxel(planesOfCuboid([0,0,0],1,1,1))
     #print vox.dz
-    print intersectPlanePlanePlane(plane1,plane2,plane3)
+    print (intersectPlanePlanePlane(plane1,plane2,plane3))
     res,ray1 = intersectPlanePlane(plane1,plane2)
     res,ray2 = intersectPlanePlane(plane2,plane3)
-    print intersectRayRay(ray1,ray2)
-    print "floating point prec. times a few",epsFloat
-    print intersectRayRay(ray1,ray2)
-    print plane1
-    print intersectRayPlane(ray2,plane1)
-    print intersectPlanePlane(plane1,plane2)
+    print (intersectRayRay(ray1,ray2))
+    print ("floating point prec. times a few",epsFloat)
+    print (intersectRayRay(ray1,ray2))
+    print( plane1)
+    print (intersectRayPlane(ray2,plane1))
+    print (intersectPlanePlane(plane1,plane2))
     print(roty(np.pi/2.).dot(np.array([1,0,0])))
 
 
