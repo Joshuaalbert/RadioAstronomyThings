@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[3]:
 
 '''Contains geometry algorithms'''
 import numpy as np
@@ -71,7 +71,9 @@ def itrs2uvw(ha,dec,lon,lat):
     return np.array([udir,vdir,wdir])
 
 class Ray(object):
-    def __init__(self,origin,direction):
+    def __init__(self,origin,direction,id=-1):
+        if id >= 0:
+            self.id = id
         self.origin = np.array(origin)
         self.dir = np.array(direction)/np.sqrt(np.dot(direction,direction))
     def eval(self,t):
@@ -428,15 +430,28 @@ class Voxel(object):
         return "Voxel: Center {0}\nVertices:\t{2}".format(self.centroid,self.vertices)
     
 class OctTree(Voxel):
-    def __init__(self,center=None,dx=None,dy=None,dz=None,boundingPlanes=None,parent=None):
+    def __init__(self,center=None,dx=None,dy=None,dz=None,boundingPlanes=None,parent=None,properties=None):
         super(OctTree,self).__init__(center,dx,dy,dz,boundingPlanes)
         self.parent = parent
         self.children = []
         self.hasChildren = False
         self.lineSegments = {}
+        #properties are extensive or intensive.
+        #if extensive then the total property is the sum of subsystems' property
+        #if intensive then the total property is the average of the subsystems' property
+        #values are mean and standard deviation
+        if properties is not None:
+            self.properties = {}
+            for key in properties.keys():
+                if properties[key][0] == 'intensive':
+                    self.properties[key] = ['intensive',properties[key][1],properties[key][2]]
+                elif properties[key][0] == 'extensive':
+                    self.properties[key] = ['extensive',properties[key][1],properties[key][2]]
+        else:
+            self.properties = {'n':['intensive',1,0.01],'Ne':['extensive',0,1]}
     def subDivide(self):
         '''Make eight voxels to partition this voxel'''
-        if len(self.children)==8:
+        if self.hasChildren:
             for child in self.children:
                 child.subDivide()
         else:
@@ -489,19 +504,80 @@ class OctTree(Voxel):
             #relates to subdivide
             quad = 4*(point[0] > self.centroid[0]) + 2*(point[1] > self.centroid[1]) + ( point[2] > self.centroid[2])
             res,point = self.children[quad].intersectRay(ray)
+    def minCellSize(self):
+        '''Recursive discovery of the smallest cell size. Expensive!'''
+        if self.hasChildren:
+            cellSizes = []
+            for child in self.children:
+                cellSizes.append(child.minCellSize())
+            minAx = np.min(cellSizes,axis=0)
+            return minAx
+        else:
+            return np.array([self.dx,self.dy,self.dz])
 
-        return len(points)>0,points   
+    def getDepth(self,childDepth=0):
+        '''Get depth of child OctTree by pushing through parents'''
+        if self.parent is None:
+            return childDepth
+        else:
+            return self.parent.getDepth(childDepth+1)
+    
+    def removeNode(self,giveProperties=True):
+        '''Remove the current OctTree AND siblings.
+        If giveProperties then parent will get the sum or average of properties of children.'''
+        self.parent.killChildren(giveProperties)
+    
+    def accumulateChildren(self):
+        '''Accumulate the properties of children'''
+        if self.hasChildren:
+            for key in self.properties.keys():
+                self.properties[key][1] = 0
+                self.properties[key][2] = 0
+            for child in self.children:
+                child.accumulateChildren()
+                for key in self.properties.keys():
+                    if self.properties[key][0] == 'intensive':
+                        self.properties[key][1] += child.volume*child.properties[key][1]
+                        self.properties[key][2] += (child.volume*child.properties[key][2])**2
+                    elif self.properties[key][0] == 'extensive':
+                        self.properties[key][1] += child.properties[key][1]
+                        self.properties[key][2] += child.properties[key][2]**2
+            for key in self.properties.keys():
+                if self.properties[key][0] == 'intensive':
+                    self.properties[key][1] /= self.volume
+                    self.properties[key][2] = np.sqrt(self.properties[key][2])/self.volume
+                if self.properties[key][0] == 'extensive':
+                    self.properties[key][2] = np.sqrt(self.properties[key][2])
+
+    def killChildren(self,takeProperties=True):
+        '''Delete all lower branches if they exist.
+        Take properties from children if required'''
+        
+        #if self.hasChildren: 
+        #inefficient becuase of multiple calls to accumulate causes runs up and down
+        #    for child in self.children:
+        #        child.killChildren(takeProperties)
+        if takeProperties:
+            self.accumulateChildren()
+        if self.hasChildren:    
+            #remove the reference (python automatically cleans up when no more reference)
+            del self.children
+            self.hasChildren = False
     def __repr__(self):
-        return "OctTree: center {0} children {1}".format(self.centroid,len(self.children)==8)
+        return "OctTree: center {0} hasChildren {1}".format(self.centroid,self.hasChildren)
         
 if __name__ == '__main__':    
     
 
     octTree = OctTree(np.array([0,0,0]),1,1,1)
     print (octTree)
-    octTree.subDivide().subDivide()
-    print (octTree.children[0].children)
-    exit(0)
+    get_ipython().magic(u'timeit -n 10 OctTree(np.array([0,0,0]),1,1,1).subDivide().subDivide()')
+    print octTree.properties
+    octTree.accumulateChildren()
+    print octTree.properties
+    print octTree.minCellSize()
+    #exit(0)
+    '''
     rays = []
     planes = []
     for i in range(6):
@@ -524,7 +600,12 @@ if __name__ == '__main__':
     print( plane1)
     print (intersectRayPlane(ray2,plane1))
     print (intersectPlanePlane(plane1,plane2))
-    print(roty(np.pi/2.).dot(np.array([1,0,0])))
+    print(roty(np.pi/2.).dot(np.array([1,0,0])))'''
+
+
+# In[ ]:
+
+
 
 
 # In[ ]:

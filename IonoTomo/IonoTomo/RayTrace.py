@@ -6,6 +6,16 @@
 from Geometry import *
 from itertools import combinations
 
+def makeOctTree(eastWidth,northWidth,pointingHeight,alt,az,minSep):
+    '''Define an OctTree with pointing and given dimensions
+    minSep - minimum seperation between sources in radians'''
+    minCellSize = np.tan(minSep)*pointingHeight
+    center = np.array([0,0,pointingHeight/2.])
+    masterOctTree = OctTree(center,eastWidth,northWidth,pointingHeight)
+    while masterOctTree.minCellSize()[0] > minCellSize:
+        masterOctTree.subDivide()
+    
+    
 
 def makePlanes(height,width,du,dw):
     planes = []
