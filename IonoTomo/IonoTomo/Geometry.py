@@ -1,13 +1,13 @@
 
 # coding: utf-8
 
-# In[3]:
+# In[21]:
 
 '''Contains geometry algorithms'''
 import numpy as np
 from itertools import combinations
 
-epsFloat = (7/3. - 4/3. - 1)*10
+epsFloat = (7/3. - 4/3. - 1)*10000
 
 def rot(dir,theta):
     '''create the rotation matric about unit vector dir by theta radians.
@@ -122,12 +122,18 @@ class Plane(object):
             return False
         return None
     def onPlane(self,p):
-        return (np.abs(self.n.dot(p) + self.d) < epsFloat)
+        a = np.abs(self.n.dot(p) + self.d)
+        if a < epsFloat:
+            return True
+        else:
+            print a,epsFloat
+        
     def __repr__(self):
         return "Plane: normal: {0}, d=-n.p {1}".format(self.n,self.d)
       
-
-        
+def distPointPoint(point1,point2):
+    '''return euclidean dist'''
+    return np.linalg.norm(point2-point1)
                     
 def projLineSegPlane(line,plane):
     '''Project a lineseg onto a plane.'''
@@ -174,20 +180,21 @@ def intersectRayRay(ray1,ray2):
     type = -1 parallel rays
     0 -> intersection point
     1 -> LineSegment'''
-    A = np.cross(ray1.dir,ray2.dir)
-    Amag = np.sqrt(A.dot(A))
-    if Amag < epsFloat:
-        print("ray1 and ray2 are parallel")
-        return -1,None
-    B = ray2.origin - ray1.origin
-    M = np.array([B,ray2.dir,A]).transpose()
-    t1 = np.linalg.det(M)/Amag
-    M[:,1] = ray1.dir
-    t2 = np.linalg.det(M)/Amag
+    n1n2 = ray1.dir.dot(ray2.dir)
+    B = ray1.origin - ray2.origin
+    det = n1n2*n1n2 - 1
+    if det < epsFloat:
+        #print("ray1 and ray2 are parallel")
+        t1 = -B.dot(ray1.dir)
+        t2 = 0
+    else:
+        dPn1 = B.dot(ray1.dir)
+        dPn2 = B.dot(ray2.dir)
+        t1 = (-n1n2*dPn2 + dPn1)/det
+        t2 = (n1n2*dPn1 - dPn2)/det
     p1 = ray1.eval(t1)
     p2 = ray2.eval(t2)
-    c = p2 - p1
-    d = np.sqrt(c.dot(c))
+    d = distPointPoint(p1,p2)
     if (d < epsFloat):
         return True, p1
     else:
@@ -367,7 +374,7 @@ def boundPlanesOfCuboid(center,dx,dy,dz):
     planes.append(BoundedPlane([np.array(center) + np.array([-dx/2.,-dy/2.,-dz/2.]),
                                 np.array(center) + np.array([dx/2.,-dy/2.,-dz/2.]),
                                 np.array(center) + np.array([-dx/2.,-dy/2.,dz/2.]),
-                                np.array(center) + np.array([dx/2.,-dy/2.,dz/2.]),]))
+                                np.array(center) + np.array([dx/2.,-dy/2.,dz/2.])]))
     planes.append(BoundedPlane([np.array(center) + np.array([dx/2.,-dy/2.,-dz/2.]),
                                 np.array(center) + np.array([dx/2.,-dy/2.,dz/2.]),
                                 np.array(center) + np.array([dx/2.,dy/2.,dz/2.]),
@@ -393,10 +400,9 @@ def boundPlanesOfCuboid(center,dx,dy,dz):
 class Voxel(object):
     def __init__(self,center=None,dx=None,dy=None,dz=None,boundingPlanes=None):
         '''Create a volume out of bounding planes'''
-        try:
-            boundingPlanes = boundPlanesOfCuboid(center,dx,dy,dz)
-        except:
-            pass
+        boundingPlanes = boundPlanesOfCuboid(center,dx,dy,dz)
+        if len(boundingPlanes)!=6:
+            print ("Failed to make bounding planes for center {0}, dx {1}, dy {2}, dz {3}, planes {4}".format(center,dx,dy,dz,len(boundingPlanes)))
             
         if boundingPlanes is not None:
             self.vertices = []
@@ -450,7 +456,7 @@ class OctTree(Voxel):
         else:
             self.properties = {'n':['intensive',1,0.01],'Ne':['extensive',0,1]}
     def subDivide(self):
-        '''Make eight voxels to partition this voxel'''
+        '''Make eight voxels to partition this voxel. 8x longer per layer'''
         if self.hasChildren:
             for child in self.children:
                 child.subDivide()
@@ -563,6 +569,25 @@ class OctTree(Voxel):
             #remove the reference (python automatically cleans up when no more reference)
             del self.children
             self.hasChildren = False
+    def countDecendants(self):
+        '''8x longer per layer'''
+        if self.hasChildren:
+            sum = 0
+            for child in self.children:
+                sum += child.countDecendants()
+            return sum
+        else:
+            return 1
+    def getAllBoundingPlanes(self):
+        '''8x longer per layer'''
+        boundingPlanes = []
+        if self.hasChildren:
+            for child in self.children:
+                boundingPlanes = sum(child.getAllBoundingPlanes(), boundingPlanes)
+            return [boundingPlanes]
+        else:
+            return [self.boundingPlanes]
+        
     def __repr__(self):
         return "OctTree: center {0} hasChildren {1}".format(self.centroid,self.hasChildren)
         
@@ -570,8 +595,8 @@ if __name__ == '__main__':
     
 
     octTree = OctTree(np.array([0,0,0]),1,1,1)
-    print (octTree)
-    get_ipython().magic(u'timeit -n 10 OctTree(np.array([0,0,0]),1,1,1).subDivide().subDivide()')
+    octTree.subDivide().subDivide().subDivide()
+    print "children:", len(octTree.getAllBoundingPlanes()[0])
     print octTree.properties
     octTree.accumulateChildren()
     print octTree.properties
@@ -601,14 +626,4 @@ if __name__ == '__main__':
     print (intersectRayPlane(ray2,plane1))
     print (intersectPlanePlane(plane1,plane2))
     print(roty(np.pi/2.).dot(np.array([1,0,0])))'''
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
 

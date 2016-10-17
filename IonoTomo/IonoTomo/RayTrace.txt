@@ -1,7 +1,17 @@
 
 from Geometry import *
-from itertools import combination
+from itertools import combinations
 
+def makeOctTree(eastWidth,northWidth,pointingHeight,alt,az,minSep):
+    '''Define an OctTree with pointing and given dimensions
+    minSep - minimum seperation between sources in radians'''
+    minCellSize = np.tan(minSep)*pointingHeight
+    center = np.array([0,0,pointingHeight/2.])
+    masterOctTree = OctTree(center,eastWidth,northWidth,pointingHeight)
+    while masterOctTree.minCellSize()[0] > minCellSize:
+        masterOctTree.subDivide()
+    
+    
 
 def makePlanes(height,width,du,dw):
     planes = []
@@ -21,15 +31,10 @@ def makePlanes(height,width,du,dw):
         h += du
     return planes
 
-def buildVoxels(planes):
-    planeHexlets = combination(planes,6)
+def buildOctTree(center,dx,dy,dz):
     voxels = []
-    for hexlet in planeHexlets:
-        vox = Voxel(hexlet)
-        if vox.volume > 0:
-            voxels.append(vox)
-    print voxels
-            
+    for center in centers:
+        voxel.append(Voxel(center=center,dx=dx,dy=dy,dz=dz))
     
 
 def point2index(point,du,dw):
@@ -38,33 +43,46 @@ def point2index(point,du,dw):
     nw = np.floor(point[2]/dw)
     return nu,nv,nw    
     
-def tracer(sources,recievers,planes):
+def getClosestApproach(segs):
+    '''Get the closest approach between all segs'''
+    closest = {}
+    for seg1 in segs:
+        sep = np.inf 
+        for seg2 in segs:
+            if np.alltrue(seg1.origin == seg2.origin):
+                continue
+            res,seg = intersectRayRay(seg1,seg2)
+            if res:
+                sep = 0
+                closest[seg1] = LineSegment(seg,seg)#seg is a point
+                break
+            if seg.sep < sep:
+                sep = seg.sep
+                clostest[seg1] = seg
+    return closest
+
+            
+            
+                
+def tracer(sources,recievers):
     segs = []
-    for s,r in zip(sources,recievers):
-        seg = LineSegment(r,s)
-        segs.append(seg)
-    #plot x vs y
-    plotProj(segs,planes,np.array([0,1,0]))
-    #build voxels
-    voxels = buildVoxels(planes)
+    for s in sources:
+        for r in recievers:
+            seg = LineSegment(r,s)
+            segs.append(seg)
+    #get closest approach
+    print getClosestApproach(segs)
+    #build OctTree
+    mean = (np.mean(sources,axis=0) + np.mean(recievers,axis=0))/2
+    lims = np.max([np.max(sources,axis=0),np.max(recievers,axis=0)],axis=0)-np.min([np.min(sources,axis=0),np.min(recievers,axis=0)],axis=0)
+    print mean,lims
+    octTree =  OctTree(center=mean,dx=lims[0],dy = lims[1], dz = lims[2])
+    octTree.subDivide().subDivide().subDivide()
+    plotProj(segs,octTree.getAllBoundingPlanes()[0],np.array([0,1,0]))
     #build model
     for seg in segs:
         rayLengths = []
-        while seg.sep > 0:
-            #ind = point2index(seg.origin)
-            dist = []
-            points = []
-            i = 0
-            while i < len(planes):
-                res,point = intersectRayPlane(seg,planes[i])
-                if res:
-                    points.append(point)
-                    dist.append(np.linalg.norm(point-seg.origin))
-                i += 1
-            closest = np.argmin(dist)
-            rayLength.append(dist[closest])
-            
-            seg = LineSegment(points[closest],seg.eval(seg.sep))
+        octTree.intersectRay(seg)
             
 def plotProj(lineSegs,planes,projDir):
     import pylab as plt
@@ -102,18 +120,9 @@ if __name__=='__main__':
     du = width/10.
     s = [np.array([5,0,0]),np.array([2,1,0]),np.array([0,1,0])]
     r = [np.array([0,1,height]),np.array([1,6,height]),np.array([2,-1,height])]
-    planes = makePlanes(height,width,du,dw)
-    buildVoxels(planes)
-    tracer(s,r,planes)
-    
-    
-    planexy1 = Plane(np.array([0,0,0]),normal=np.array([0,0,1]))
-    planexz1 = Plane(np.array([0,0,0]),normal=np.array([0,1,0]))
-    planeyz1 = Plane(np.array([0,0,0]),normal=np.array([1,0,0]))
-    planexy2 = Plane(np.array([1,1,1]),normal=np.array([0,0,1]))
-    planexz2 = Plane(np.array([1,1,1]),normal=np.array([0,1,0]))
-    planeyz2 = Plane(np.array([1,1,1]),normal=np.array([1,0,0]))
-    print Voxel(planexy1,planexz1,planeyz1,planexy2,planexz2,planeyz2)
+
+    tracer(s,r)
+
 
 
 

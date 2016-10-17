@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[7]:
 
 from Geometry import *
 from itertools import combinations
@@ -35,10 +35,11 @@ def makePlanes(height,width,du,dw):
         h += du
     return planes
 
-def buildVoxels(centers,dx,dy,dz):
+def buildOctTree(center,dx,dy,dz):
     voxels = []
     for center in centers:
         voxel.append(Voxel(center=center,dx=dx,dy=dy,dz=dz))
+    
 
 def point2index(point,du,dw):
     nu = np.floor(point[0]/du)
@@ -46,47 +47,79 @@ def point2index(point,du,dw):
     nw = np.floor(point[2]/dw)
     return nu,nv,nw    
     
-def tracer(sources,recievers,planes):
+def getClosestApproach(segs):
+    '''Get the closest approach between all segs'''
+    closest = {}
+    outSegs = []
+    i = 0
+    while i < len(segs):
+        seg1 = segs[i]
+        sep = np.inf 
+        j = 0
+        while j < len(segs):
+            seg2 = segs[j]
+            if i == j:
+                j += 1
+                continue
+            if np.alltrue(seg1.origin == seg2.origin):
+                j += 1
+                continue
+            res,seg = intersectRayRay(seg1,seg2)
+            if res:
+                sep = 0
+                closest[seg1] = LineSegment(seg,seg)#seg is a point
+                outSegs.append(closest[seg1])
+                break
+            if seg.sep < sep:
+                sep = seg.sep
+                closest[seg1] = seg
+                outSegs.append(closest[seg1])
+            j += 1
+        i += 1
+            
+    return closest,outSegs
+            
+                
+def tracer(sources,recievers):
     segs = []
-    for s,r in zip(sources,recievers):
-        seg = LineSegment(r,s)
-        segs.append(seg)
-    #plot x vs y
-    plotProj(segs,planes,np.array([0,1,0]))
-    #build voxels
-    voxels = buildVoxels(planes)
+    for s in sources:
+        for r in recievers:
+            seg = LineSegment(r,s)
+            segs.append(seg)
+    #get closest approach
+    connectDict,connectingSegs = getClosestApproach(segs)
+    print connectingSegs
+    #build OctTree
+    mean = (np.mean(sources,axis=0) + np.mean(recievers,axis=0))/2
+    lims = np.max([np.max(sources,axis=0),np.max(recievers,axis=0)],axis=0)-np.min([np.min(sources,axis=0),np.min(recievers,axis=0)],axis=0)
+    print mean,lims
+    octTree =  OctTree(center=mean,dx=lims[0],dy = lims[1], dz = lims[2])
+    octTree.subDivide().subDivide().subDivide()
+    plotProj(segs,octTree.getAllBoundingPlanes()[0],np.array([0,1,0]),connectingSegs=connectingSegs)
     #build model
     for seg in segs:
         rayLengths = []
-        while seg.sep > 0:
-            #ind = point2index(seg.origin)
-            dist = []
-            points = []
-            i = 0
-            while i < len(planes):
-                res,point = intersectRayPlane(seg,planes[i])
-                if res:
-                    points.append(point)
-                    dist.append(np.linalg.norm(point-seg.origin))
-                i += 1
-            closest = np.argmin(dist)
-            rayLength.append(dist[closest])
+        octTree.intersectRay(seg)
             
-            seg = LineSegment(points[closest],seg.eval(seg.sep))
-            
-def plotProj(lineSegs,planes,projDir):
+def plotProj(lineSegs,planes,projDir,connectingSegs=None):
+    '''Project the lineSegs and planes into projDir and show'''
     import pylab as plt
+    from mpl_toolkits.mplot3d import Axes3D
     projPlane = Plane([0,0,0],normal=projDir)
     xdir,ydir,zdir = gramSchmidt(projDir)
     R = np.array([xdir,ydir,zdir])
     f = plt.figure()
-    ax = plt.subplot(111)
+    ax = plt.subplot(111,projection='3d')
     count = 0
     for seg in lineSegs:
         count += 1
         x1 = R.dot(seg.origin)
         x2 = R.dot(seg.eval(seg.sep))
-        ax.plot([x1[0],x2[0]],[x1[1],x2[1]],label='seg-{0}'.format(count))
+        ax.plot([x1[0],x2[0]],[x1[1],x2[1]],[x1[2],x2[2]],label='seg-{0}'.format(count))
+    for seg in connectingSegs:
+        x1 = R.dot(seg.origin)
+        x2 = R.dot(seg.eval(seg.sep))
+        ax.plot([x1[0],x2[0]],[x1[1],x2[1]],[x1[2],x2[2]],lw=2)
     ax.set_xlabel('Dir {0}'.format(xdir))
     ax.set_ylabel('Dir {0}'.format(ydir))
     xmin,xmax = ax.get_xlim()
@@ -108,20 +141,10 @@ if __name__=='__main__':
     width = 15.
     dw = height/10.
     du = width/10.
-    s = [np.array([5,0,0]),np.array([2,1,0]),np.array([0,1,0])]
-    r = [np.array([0,1,height]),np.array([1,6,height]),np.array([2,-1,height])]
-    planes = makePlanes(height,width,du,dw)
-    buildVoxels(planes)
-    tracer(s,r,planes)
-    
-    
-    planexy1 = Plane(np.array([0,0,0]),normal=np.array([0,0,1]))
-    planexz1 = Plane(np.array([0,0,0]),normal=np.array([0,1,0]))
-    planeyz1 = Plane(np.array([0,0,0]),normal=np.array([1,0,0]))
-    planexy2 = Plane(np.array([1,1,1]),normal=np.array([0,0,1]))
-    planexz2 = Plane(np.array([1,1,1]),normal=np.array([0,1,0]))
-    planeyz2 = Plane(np.array([1,1,1]),normal=np.array([1,0,0]))
-    print Voxel(planexy1,planexz1,planeyz1,planexy2,planexz2,planeyz2)
+    r = [np.array([0,0,0]),np.array([1.2,0,0]),np.array([2.1,0,0])]
+    s = [np.array([0,1,height]),np.array([1,0,height]),np.array([2.3,0,height])]
+
+    tracer(s,r)
 
 
 # In[ ]:
