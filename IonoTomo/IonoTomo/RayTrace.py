@@ -95,11 +95,16 @@ def tracer(sources,recievers):
     print mean,lims
     octTree =  OctTree(center=mean,dx=lims[0],dy = lims[1], dz = lims[2])
     octTree.subDivide().subDivide().subDivide()
-    plotProj(segs,octTree.getAllBoundingPlanes()[0],np.array([0,1,0]),connectingSegs=connectingSegs)
+    print("minimum cellsize: ",octTree.minCellSize())
+    #plotProj(segs,octTree.getAllBoundingPlanes()[0],np.array([0,1,0]),connectingSegs=connectingSegs)
     #build model
     for seg in segs:
         rayLengths = []
-        octTree.intersectRay(seg)
+        #intersect with segment a ray!
+        #populate the voxels with the length of each ray in them
+        res,point,neighbours = octTree.intersectRay(seg)
+        if res:#hit a voxel
+            if point[2] >= seg.eval(seg.sep)
             
 def plotProj(lineSegs,planes,projDir,connectingSegs=None):
     '''Project the lineSegs and planes into projDir and show'''
@@ -138,9 +143,7 @@ def plotProj(lineSegs,planes,projDir,connectingSegs=None):
 
 if __name__=='__main__':
     height = 100.
-    width = 15.
-    dw = height/10.
-    du = width/10.
+
     r = [np.array([0,0,0]),np.array([1.2,0,0]),np.array([2.1,0,0])]
     s = [np.array([0,1,height]),np.array([1,0,height]),np.array([2.3,0,height])]
 
