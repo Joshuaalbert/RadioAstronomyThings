@@ -15,8 +15,11 @@ import json
 import h5py
 import os
 import astropy.time as at
+import astropy.coordinates as ac
+import astropy.units as au
 
 from scipy.interpolate import griddata
+from scipy.signal import resample
 
 #Things we've made
 from Logger import Logger
@@ -29,7 +32,7 @@ def fft( data ):
 
 def ifft( data ):
     return np.fft.ifft2( np.fft.ifftshift( data ) ) 
-
+        
 def sumLayers(A,dim,lower,upper,heights):
     '''Given array, get the integrate content along a given direction between
     lower and upper points.
@@ -79,7 +82,18 @@ def regrid(A,shape,*presampledAx):
         resampledAx.append(t)
         i += 1
     return B,resampledAx
+
+def taiTimeFromMs(julianSeconds):
+    '''Mj seconds'''
+    return at.Time(julianSeconds - 3822681618.9974928,format='gps',scale='tai')
+
+def julianSeconds2Days(julianSeconds):
+    return julianSeconds/86400. - 2./24.
+
+def julianDays2Seconds(julianDays):
+    86400.*(julianDays + 2./24.)
     
+
 
 class Simulation(object):
     def __init__(self,simConfigJson=None,logFile=None,help=False,**args):
@@ -127,11 +141,67 @@ class Simulation(object):
                   'dataFolder':[str,""],
                   'precomputed':[bool,False],
                   'loadAtmosphere':[bool,False],
-                  'atmosphereData':[str,""]}
+                  'atmosphereData':[str,""],
+                  'msFile':[str,""],
+                  'restrictTimestamps':[int,0],
+                  'fieldId':[int,0]}
         if help:
             self.log("Attribute:[type, default]")
             self.log(self.attributes)
         return self.attributes
+    def loadFromMs(self,msFile):
+        '''Take observation parameters from a measurement file'''
+        try:
+            import pyrap.tables as pt
+        except:
+            self.log("Unable to import pyrap. Not loading ms file")
+            return 1
+        try:
+            tab = pt.table(msFile,readonly=True)
+        except:
+            self.log("MsFile: {0} does not exist".format(msFile))
+            return 2
+        #time slices
+        self.log("Setting time slices")
+        self.sampleTime = tab.getcol('EXPOSURE')[0]
+        #self.timeInit = at.Time(julianSeconds2Days(np.min(tab.getcol('TIME'))),format='jd',scale='tai')
+        self.timeInit = taiTimeFromMs(np.min(tab.getcol('TIME')))
+        if self.restrictTimestamps > 0:
+            #at.Time(np.min(tab.getcol('TIME')),format='gps',scale='tai')
+            self.timeSlices = at.Time(np.linspace(self.timeInit.gps,self.timeInit.gps+self.restrictTimestamps*self.sampleTime,self.restrictTimestamps+1),format='gps',scale='tai')
+        else:
+            #get unique times. for now just use inti and default
+            nsample = np.ceil(self.obsLength/self.sampleTime)
+            self.timeSlices = at.Time(np.linspace(self.timeInit.gps,self.timeInit.gps+nsample*self.sampleTime,nsample+1),format='gps',scale='tai')
+        self.log(self.timeInit.isot)
+        tab.close()
+        #take fieldId as the main field
+        try:
+            tabField = pt.table("{0}/FIELD".format(msFile),readonly=True)
+        except:
+            self.log("MsFile: {0}/FIELD does not exist".format(msFile))
+            return 3
+        
+        self.pointing = tabField.getcol('PHASE_DIR')[self.fieldId,0,:]*180./np.pi
+        self.fieldName = tabField.getcol('NAME')[self.fieldId]
+        tabField.close()
+        self.log("Got pointing for field {0}: {1}".format(self.fieldName, self.pointing))
+        #radio array
+        try:
+            tabAntenna= pt.table("{0}/ANTENNA".format(msFile),readonly=True)
+        except:
+            self.log("MsFile: {0}/ANTENNA does not exist".format(msFile))
+            return 4
+        antennaPos = tabAntenna.getcol('POSITION')
+        self.log("Setting radio array")
+        self.radioArray = RadioArray(antennaPos=antennaPos,log = self.log)
+        self.radioArray.calcBaselines(self.timeSlices,self.pointing)
+        self.frames = self.radioArray.frames
+        tabAntenna.close()
+        self.log("Finished loading parameters from msFile {0}".format(msFile))
+        return 0
+        
+        
     def initializeSimulation(self,**args):
         '''Set up variables here that will hold references throughout'''
         attributes = self.getAttributes()
@@ -183,31 +253,41 @@ class Simulation(object):
             self.log("Found config file in data folder!")
             self.loadSimConfigJson(simConfigJson)
         
-        #time slices
-        self.log("Setting time slices")
-        nsample = np.ceil(self.obsLength/self.sampleTime)
-        self.timeInit = at.Time(self.obsStart,format='isot',scale='utc')
-        self.timeSlices = at.Time(np.linspace(self.timeInit.gps,self.timeInit.gps+nsample*self.sampleTime,nsample+1),format='gps',scale='utc')
+        #try to load msFile
+        loadSucceed = False
+        if self.msFile is not "":
+            if not self.loadFromMs(self.msFile):
+                loadSucceed = True
+
         
-        #set skymodel
-        self.log("Setting sky model")
-        self.skyModel = SkyModel(self.skyModelFile,
-                                 log=self.log)
-        #set radio array
-        self.log("Setting radio array")
-        if self.arrayFile is not "":
-            self.radioArray = RadioArray(arrayFile = self.arrayFile,
-                                         log =self.log)
-            self.radioArray.calcBaselines(self.timeSlices,self.pointing)
-        else:
-            self.radioArray = RadioArray(log = self.log)
-            
+        if not loadSucceed:
+            #time slices
+            self.log("Setting time slices")
+            nsample = np.ceil(self.obsLength/self.sampleTime)
+            self.timeInit = at.Time(self.obsStart,format='isot',scale='tai')
+            self.timeSlices = at.Time(np.linspace(self.timeInit.gps,self.timeInit.gps+nsample*self.sampleTime,nsample+1),format='gps',scale='tai')
+            #set radio array
+            self.log("Setting radio array")
+            if self.arrayFile is not "":
+                self.radioArray = RadioArray(arrayFile = self.arrayFile,
+                                             log =self.log)
+                self.radioArray.calcBaselines(self.timeSlices,self.pointing)
+                self.frames = self.radioArray.frames
+            else:
+                self.radioArray = RadioArray(log = self.log)
         #set frequency
         self.log("Setting frequency")
         try:
             self.setFrequency(self.frequency)
         except:
             self.setWavelength(self.wavelength)
+
+        #set skymodel
+        self.log("Setting sky model")
+        self.skyModel = SkyModel(self.skyModelFile,
+                                 log=self.log)
+        
+            
         
         #layers
         self.log("Setting layers")
@@ -302,7 +382,7 @@ class Simulation(object):
         return 0
     def getMaxTime(self):
         return len(self.timeSlices)-1
-    def getVisibilities(self,timeIdx,layerIdx):
+    def getVisibilitiesPhase(self,timeIdx,layerIdx):
         '''Returns visibilities <E*E^*->, (x1,x2,'units'), (y1,y2,'units')'''
         vmin = np.inf
         vmax = -np.inf
@@ -313,7 +393,7 @@ class Simulation(object):
             i += 1
         xrad = (self.layerHeights[layerIdx]*1000. + self.atmosphere.arrayHeight)*self.atmosphere.xangle/self.getWavelength()/2.
         yrad = (self.layerHeights[layerIdx]*1000. + self.atmosphere.arrayHeight)*self.atmosphere.xangle/self.getWavelength()/2.
-        return (self.visibility[timeIdx][layerIdx],(-xrad,xrad,'lambda'),(-yrad,yrad,'lambda'),(vmin,vmax))
+        return (np.angle(self.visibility[timeIdx][layerIdx]),(-xrad,xrad,'lambda'),(-yrad,yrad,'lambda'),(vmin,vmax))
     def getIntensity(self,timeIdx,layerIdx):
         '''Returns intensity <E.E>, (x1,x2,'units'), (y1,y2,'units')'''
         vmin = np.inf
@@ -389,8 +469,12 @@ class Simulation(object):
         self.log("Calculating electron density/refractive index/tau per layer.")
         self.atmosphere.run()
         heights = self.atmosphere.heights - self.atmosphere.arrayHeight#heights are from earth center, so takea way array center
+        #s = ac.SkyCoord(ra = pointing[0]*au.deg,dec=pointing[1]*au.deg,frame='icrs')
+        #interfaces,layers = atmosphere2Layers(self.atmosphere,self.heights,self.frames,s)
         #refractive scale constant m^3Hz^2
+        return
         refractiveScale = (self.atmosphere.eCharge/(2*np.pi))**2/self.atmosphere.epsilonPerm/self.atmosphere.eMass
+        
         timeIdx = 0
         while timeIdx < len(self.timeSlices):
             electronDensity = []
@@ -401,18 +485,21 @@ class Simulation(object):
             while layerIdx < len(self.layerHeights):
                 lowerLayerHeight = prevLayerHeight
                 upperLayerHeight = self.layerHeights[layerIdx]*1000.#km to m
-                electronDensity.append(sumLayers(self.atmosphere.cells[timeIdx],
-                                                 2,
-                                                 0,
-                                                 upperLayerHeight,
-                                                 heights))
+                shape = self.atmosphere.cells[timeIdx].shape
+                B,t=regrid(self.atmosphere.cells[timeIdx],
+                                              [shape[0],shape[1],len(self.layerHeights)],
+                                              self.atmosphere.longitudes,
+                                              self.atmosphere.latitudes,
+                                              self.atmosphere.heights)
+                electronDensity.append(B)
                 refractiveIndex.append(np.sqrt(1. - refractiveScale*electronDensity[-1]/self.getFrequency()**2))
                 fineRefractiveIndex = np.sqrt(1. - refractiveScale*self.atmosphere.cells[timeIdx]/self.getFrequency()**2)
-                tau.append(sumLayers(2*np.pi/self.getWavelength()*fineRefractiveIndex,
-                                                 2,
-                                                 lowerLayerHeight,
-                                                 upperLayerHeight,
-                                                 heights))
+                B,t=regrid(fineRefractiveIndex,
+                                              [shape[0],shape[1],len(self.layerHeights)],
+                                              self.atmosphere.longitudes,
+                                              self.atmosphere.latitudes,
+                                              self.atmosphere.heights)
+                tau.append(B)
                 prevLayerHeight = upperLayerHeight
                 layerIdx += 1
             self.electronDensity[timeIdx] = np.array(electronDensity)
@@ -424,6 +511,8 @@ class Simulation(object):
         self.log("Propagating the phase distortions/sky model.")
         #determine image size
         #Umax = self.radioArray.baselines....
+        #propagate 1,0
+        A = self.skyModel
         Umax = 25000/self.getWavelength()#gmrt make auto 
         Vmax = 25000/self.getWavelength()
         lres = 1./Umax#rad
@@ -439,7 +528,7 @@ class Simulation(object):
         u = np.fft.fftshift(np.fft.fftfreq(Nl,d=np.abs(l[1]-l[0])))
         v = np.fft.fftshift(np.fft.fftfreq(Nm,d=np.abs(m[1]-m[0])))
         U,V = np.meshgrid(u,v)
-        
+        return
         timeIdx = 0
         while timeIdx < len(self.timeSlices):
             self.log("Computing time index: {0} of {1}".format(timeIdx, len(self.timeSlices)))
@@ -494,9 +583,4 @@ if __name__ == '__main__':
     print A.shape
     print "sum along 1 dim"
     print sumLayers(A,1,lower,upper,heights).shape
-
-
-# In[ ]:
-
-
 

@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[202]:
+# In[2]:
 
 import numpy as np
 from Logger import Logger
@@ -317,7 +317,7 @@ class gaussianDecomposition(object):
         xroots = dddxsp.roots()
         yroots = dddysp.roots()
         zroots = dddzsp.roots()
-        print xroots,yroots,zroots
+        print (xroots,yroots,zroots)
        
     def compute_zeroth(self,x,y,z):
         '''Return the nearest.'''
@@ -721,7 +721,7 @@ def propagateBackwards(l,m,s,x0,xi,obstime,NObj,rmaxRatio,plot=False,ax=None):
         Z.append(r*np.cos(theta))
     #while r < rNum/np.abs(np.sin(theta_s)*np.sin(theta)*np.cos(phi_s - phi) + np.cos(theta_s)*np.cos(theta)) and ODE.successful():
     z = zDist(r,theta,phi,s,x0)
-    print zDot(r,theta,phi,s,pr,ptheta,pphi,n)
+    print (zDot(r,theta,phi,s,pr,ptheta,pphi,n))
     while r < rmax:#zMax:
         dt = zMax/100.
         #dt = max(zMax/10000,(zMax - z)/zDot(r,theta,phi,s,pr,ptheta,pphi,n)/10.)#sections of arc.

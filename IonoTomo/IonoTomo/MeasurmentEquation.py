@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[7]:
+# In[1]:
 
 '''This holds the machinery for making measurment equations for a given antenna layout and pointing and sky brightness.
 Uses the linear equation formulation.'''
@@ -131,7 +131,7 @@ def measurementEquationVector(skyBrightness,X,P,noiseCovariance=None):
 def catalog2ms(simTk,catalogName):
     #load catalog
     cat = np.genfromtxt(catalogName,comments='#',skip_header=5,names=True)
-    print cat
+    print (cat)
     ra = cat['RA']
     
     dec = cat['DEC']
@@ -205,4 +205,9 @@ if __name__=='__main__':
     catalog2ms(simTk,catalogName)
     
     
+
+
+# In[ ]:
+
+
 
