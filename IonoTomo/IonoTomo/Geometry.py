@@ -902,9 +902,10 @@ def plotOctTreeYZ(octTree,ax=None):
     plt.show()
     return ax
 
-def plotOctTree3D(octTree,model=None):
+def plotOctTree3D(octTree,model=None,rays=False):
     import pylab as plt
     from mpl_toolkits.mplot3d import Axes3D
+    import matplotlib.colors as colors
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.set_xlabel('x')
@@ -916,16 +917,14 @@ def plotOctTree3D(octTree,model=None):
     i = 0
     for vox in voxels:
         if model is not None:
-            if model[i] > epsFloat:
-                c = (model[i]-vmin)/(vmax-vmin)
-                if np.isnan(c):
-                    c = 0.5
-                ax.scatter(*vox.centroid,edgecolor=None,depthshade=True,c=c)
+            p = ax.scatter(*vox.centroid,edgecolor=None,depthshade=True,c=model[i],norm=colors.Normalize(vmin = vmin,vmax = vmax))
             i += 1
-        for key in vox.lineSegments.keys():
-            p1 = vox.lineSegments[key].origin
-            p2 = vox.lineSegments[key].eval(vox.lineSegments[key].sep)
-            ax.plot([p1[0],p2[0]],[p1[1],p2[1]],[p1[2],p2[2]],ls='-')
+        if rays:
+            for key in vox.lineSegments.keys():
+                p1 = vox.lineSegments[key].origin
+                p2 = vox.lineSegments[key].eval(vox.lineSegments[key].sep)
+                ax.plot([p1[0],p2[0]],[p1[1],p2[1]],[p1[2],p2[2]],ls='-')
+    fig.colorbar(p)
     plt.show()
 
 
