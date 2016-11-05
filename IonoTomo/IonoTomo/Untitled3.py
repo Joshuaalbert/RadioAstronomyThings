@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[5]:
+# In[1]:
 
 from Geometry import *
 import numpy as np
@@ -237,29 +237,21 @@ def transformCov2Linear(Cm_log,K):
     '''
     return (np.exp(Cm_log) - 1.)*K**2
 
-def mayaviPlot(x,m,mprior,maxNumPts=None):
+def mayaviPlot(x,m,maxNumPts=None):
     '''Do a density plot'''
-
-    from mayavi.sources.api import VTKDataSource
     from mayavi import mlab
+    
+    X = x[:,0]
+    Y = x[:,1]
+    Z = x[:,2]
+    xyz = np.vstack([X,Y,Z])
+    #kde = stats.gaussian_kde(xyz)
+    #density = kde(xyz)
 
-    from scipy.interpolate import griddata
-
-    xmin,ymin,zmin = np.min(x[:,0]),np.min(x[:,1]),np.min(x[:,2])
-    xmax,ymax,zmax = np.max(x[:,0]),np.max(x[:,1]),np.max(x[:,2])
-    X,Y,Z = np.meshgrid(np.linspace(xmin,xmax,128),
-                        np.linspace(ymin,ymax,128),
-                        np.linspace(zmin,zmax,128))
-    field = griddata((x[:,0],x[:,1],x[:,2]),m-mprior,(X.flatten(),Y.flatten(),Z.flatten()),method='linear').reshape(X.shape)
-
-    #mlab.contour3d(field,contours=2)
-    min = np.min(m-mprior)
-    max = np.max(m-mprior)
-    mlab.pipeline.volume(mlab.pipeline.scalar_field(field),vmin=min, vmax=min + .5*(max-min))
-    mlab.points3d(x[:,0],x[:,1],x[:,2],m-mprior,scale_mode='vector', scale_factor=10.)
-    mlab.axes()
-    mlab.show()
-
+    # Plot scatter with mayavi
+    figure = mlab.figure('DensityPlot')
+    figure.scene.disable_render = True
+    pts = mlab.points3d(X,Y,Z, m, scale_mode='vector', scale_factor=1.)
     
     #if maxNumPts is not None:
     #    mask = pts.glyph.mask_points
@@ -268,7 +260,9 @@ def mayaviPlot(x,m,mprior,maxNumPts=None):
     #    pts.glyph.mask_input_points = True
 
     #figure.scene.disable_render = False 
-
+    
+    mlab.axes()
+    mlab.show()
     #turn X,Y,Z,m into mesh and values
     
     #grid = mlab.pipeline.scalar_field(xi, yi, zi, density)
@@ -461,46 +455,6 @@ def MetropolisSolution(G,dobs,Cd,Cmprior,mprior):
         iter += 1
     Cm = np.cov(postDist,rowvar=0)
     return mML,Cm
-
-def metropolisPosteriorCovariance(G,dobs,Cd,CmlogPost,mlogPost,K):
-    postDist = []
-    size = 1000
-    Cdinv = np.linalg.pinv(Cd)
-    print(Cdinv)
-    Cminv = np.linalg.pinv(CmlogPost)
-    mSamples = np.random.multivariate_normal(mean=mlogPost, cov = CmlogPost,size=size)
-    i = 0
-    
-    mi = mSamples[i]
-    di = G.dot(mi) - dobs
-    dm = mi - mlogPost
-    Li = np.exp(-di.transpose().dot(Cdinv).dot(di)/2. - dm.transpose().dot(Cminv).dot(dm)/2.)
-    while i < size:
-        print(i)
-        j = i+1
-        while j < size:
-            mj = mSamples[j]
-            dj = G.dot(mj) - dobs
-            dm = mj - mlogPost
-            Lj = np.exp(-dj.transpose().dot(Cdinv).dot(dj)/2. - dm.transpose().dot(Cminv).dot(dm)/2.)
-            print(Li,Lj)
-            if Lj > Li:
-                Li = Lj
-                count += 1
-                postDist.append(K*np.exp(mj))
-                i = j
-                break
-            else:
-                if np.random.uniform() < Lj/Li:
-                    Li = Lj
-                    count += 1
-                    postDist.append(K*np.exp(mj))
-                    i = j
-                    break
-            j += 1
-    Cm = np.cov(postDist,rowvar=0)
-    mML = np.mean(postDist,axis=0)
-    return mML,Cm
             
 def LMSol(G,mprior,Cd,Cm,dobs,mu=1.,octTree=None):
     """Assume the frechet derivative is,
@@ -508,36 +462,24 @@ def LMSol(G,mprior,Cd,Cm,dobs,mu=1.,octTree=None):
 
     K = np.mean(mprior)
     mlog = np.log(mprior/K)
-
+    
     Cm_log = transformCov2Log(Cm,K)#np.log(1. + Cm/K**2)#transformCov2Log(Cm,mprior)
     #Cdinv = np.linalg.pinv(Cd)
-    if octTree is not None:
-        voxels = getAllDecendants(octTree)
-        scale = np.zeros(np.size(mprior))
-        i = 0
-        while i < np.size(mprior):
-            scale[i] = voxels[i].volume**(1./3.)
-            i+= 1
-        C = np.sum(G,axis=0)/scale
-        C = C/float(np.max(C))
-        C[C==0] = np.min(C[C>0])/2.
-    else:
-        C = np.sum(G>0,axis=0)
-        C = C/float(np.max(C))
-        C[C==0] = np.min(C[C>0])/2.
-        #C = np.sum(G,axis=0)
-        #C = C/np.max(C)
+    C = np.sum(G>0,axis=0)
+    C = C/np.max(C)
+    C[C==0] = np.min(C[C>0])/2.
+    #C = np.sum(G,axis=0)
+    #C = C/np.max(C)
     res = 1
     iter = 0
-    while res > 1e-8 and iter < 20:
+    while res > 1e-8 and iter < 1000:
         #forward transform
-        #print(mlog)
         mForward = K*np.exp(mlog)
-
         g = G.dot(mForward)
         J = G*mForward
         #residuals g - dobs -> -dm
         res = g - dobs
+        
         #A1 = J.transpose().dot(Cdinv)
         #Cmlog_inv = A1.dot(J) + mu*Cm_log
         #dm,resi,rank,s = np.linalg.lstsq(Cmlog_inv,A1.dot(res))
@@ -551,16 +493,13 @@ def LMSol(G,mprior,Cd,Cm,dobs,mu=1.,octTree=None):
         res = np.sum(dm**2)/np.sum(mlog**2)
         print("Iter-{0} res: {1}".format(iter,res))
         #converage learn propto length of rays in cells
-        #print(dm)
+        
         mlog -= dm*C
         iter += 1
-    CmlogPost = Cm_log - P1.dot(smooth).dot(P1.transpose())
-    print(CmlogPost)
-    mMl,cmlin = metropolisPosteriorCovariance(G,dobs,Cd,CmlogPost,mlog,K)
-    return K*np.exp(mlog), cmlin
+    
+    return K*np.exp(mlog), transformCov2Linear(Cm_log,K)
         
 if __name__=='__main__':
-    np.random.seed(1234)
     print("Constructing ionosphere model")
     maxBaseline = 100.
     height=1000.
@@ -595,87 +534,32 @@ if __name__=='__main__':
     #m,Cm = MetropolisSolution(G,dobs,Cd,Cmprior,mprior)
     #m = BerrymanSol(G,dobs,mprior=None,Cd=Cd,Cm=None,mu=0.00)
     #m,Cm = SteepestDescent(octTree,rays,dobs,Cd,Cmprior,mprior)
-    m,Cm = LMSol(G,mprior,Cd,Cmprior,dobs,mu=1.0,octTree=None)
+    m,Cm = LMSol(G,mprior,Cd,Cmprior,dobs,mu=1.0)
     CmCm = Cm.dot(np.linalg.inv(Cmprior))
     R = np.eye(CmCm.shape[0]) - CmCm
     print("Resolved by dataSet:{0}, resolved by a priori:{1}".format(np.trace(R),np.trace(CmCm)))
-    plot=False
-    if plot:
-        import pylab as plt
-        plt.plot(m,label='res')
-        plt.plot(mexact,label='ex')
-        plt.plot(mprior,label='pri')
-        C = np.sum(G>0,axis=0)
-        C = C < 3
-        plt.scatter(np.arange(len(m))[C],m[C])
-        plt.legend(frameon=False)
+    import pylab as plt
+    plt.plot(m,label='res')
+    plt.plot(mexact,label='ex')
+    plt.plot(mprior,label='pri')
+    C = np.sum(G>0,axis=0)
+    C = C < 3
+    plt.scatter(np.arange(len(m))[C],m[C])
+    plt.legend(frameon=False)
+    plt.show()
+    plotOctTreeXZ(octTree,ax=None)
+    plotOctTree3D(octTree,model=m,rays=False)
+    if False:
+        f,(ax1,ax2) = plt.subplots(2,1,sharex=True,sharey=True)
+        ax1.imshow(Cm)
+        ax2.imshow(Cmexact_lin)
         plt.show()
-        plotOctTreeXZ(octTree,ax=None)
-        plotOctTree3D(octTree,model=m,rays=False)
-   
+
+        plt.hist(np.sum(G>0,axis=0),bins=100)
+        plt.show()
+        print(G)
 
 
-# In[17]:
-
-from tvtk.api import tvtk
-from mayavi.sources.api import VTKDataSource
-from mayavi import mlab
-
-from scipy.interpolate import griddata
-
-xmin,ymin,zmin = np.min(x[:,0]),np.min(x[:,1]),np.min(x[:,2])
-xmax,ymax,zmax = np.max(x[:,0]),np.max(x[:,1]),np.max(x[:,2])
-X,Y,Z = np.meshgrid(np.linspace(xmin,xmax,100),
-                    np.linspace(ymin,ymax,100),
-                    np.linspace(zmin,zmax,100))
-field = griddata((x[:,0],x[:,1],x[:,2]),m-mexact,(X.flatten(),Y.flatten(),Z.flatten()),method='linear').reshape(X.shape)
-
-#mlab.contour3d(field,contours=2)
-mlab.pipeline.volume(mlab.pipeline.scalar_field(X,Y,Z,field))
-mlab.axes()
-mlab.show()
-#src = mlab.pipeline.scalar_scatter(X,Y,Z,m)
-#pts = mlab.pipeline.glyph(src,scale_mode='vector',scale_factor=10.)
-#field = mlab.pipeline.delaunay3d(src)
-#mlab.axes()
-#mlab.show()
-#field = mlab.pipeline.delaunay3d(
-
-
-# In[9]:
-
-from tvtk.api import tvtk
-#make data source
-i = tvtk.ImageData(spacing=minCellSize(octTree),origin=(0,0,0))
-i.point_data.scalars = m
-i.point_data.scalars.name = 'scalars'
-i.dimensions = (2**3,2**3,2**3)
-from mayavi import mlab
-mlab.pipeline.volume(i)
-#mlab.pipeline.iso_surface(i,contours=4,opacity=0.5)
-
-#from mayavi.api import Engine
-
-#fig = mlab.figure()
-
-#src = mlab.pipeline.scalar_scatter(x[:,0],x[:,1],x[:,2],m)
-#pts = mlab.pipeline.glyph(src,scale_mode='vector',scale_factor=10.)
-#field = mlab.pipeline.delaunay3d(src)
-#edges = mlab.pipeline.extract_edges(field)
-#mlab.points3d(src)
-#mlab.pipeline.iso_surface(mlab.pipeline.get_vtk_src(field),contours=5,transparent=True)
-mlab.axes()
-mlab.show()
-
-
-# In[3]:
-
-help(mlab.pipeline.volume)
-
-
-# In[14]:
-
-mayaviPlot(x,m,mprior)
 
 
 # In[ ]:
