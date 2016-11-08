@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[5]:
+# In[2]:
 
 from Geometry import *
 import numpy as np
@@ -466,35 +466,40 @@ def metropolisPosteriorCovariance(G,dobs,Cd,CmlogPost,mlogPost,K):
     postDist = []
     size = 1000
     Cdinv = np.linalg.pinv(Cd)
-    print(Cdinv)
     Cminv = np.linalg.pinv(CmlogPost)
     mSamples = np.random.multivariate_normal(mean=mlogPost, cov = CmlogPost,size=size)
+    T0 = 5
     i = 0
-    
-    mi = mSamples[i]
+    count = 0
+    mSample = np.random.multivariate_normal(mean=mlogPost, cov = CmlogPost)
+    mi = K*np.exp(mSample)
     di = G.dot(mi) - dobs
-    dm = mi - mlogPost
-    Li = np.exp(-di.transpose().dot(Cdinv).dot(di)/2. - dm.transpose().dot(Cminv).dot(dm)/2.)
-    while i < size:
-        print(i)
+    dm = mSample - mlogPost
+    Li = np.exp(-di.transpose().dot(Cdinv).dot(di)/2.)# - dm.transpose().dot(Cminv).dot(dm)/2./T0)
+
+    while count < size:
+        print (count)
         j = i+1
-        while j < size:
-            mj = mSamples[j]
+        while True:
+            T = T0*7/(count+7)
+            mSample = np.random.multivariate_normal(mean=mlogPost, cov = CmlogPost)
+            mj = K*np.exp(mSample)
             dj = G.dot(mj) - dobs
-            dm = mj - mlogPost
-            Lj = np.exp(-dj.transpose().dot(Cdinv).dot(dj)/2. - dm.transpose().dot(Cminv).dot(dm)/2.)
-            print(Li,Lj)
+            dm = mSample - mlogPost
+            #print("d.Cd.d",dj.transpose().dot(Cdinv).dot(dj))
+            Lj = np.exp(-dj.transpose().dot(Cdinv).dot(dj)/2.)# - dm.transpose().dot(Cminv).dot(dm)/2./T)
+            #print(Li,Lj)
             if Lj > Li:
                 Li = Lj
                 count += 1
-                postDist.append(K*np.exp(mj))
+                postDist.append(mj)
                 i = j
                 break
             else:
                 if np.random.uniform() < Lj/Li:
                     Li = Lj
                     count += 1
-                    postDist.append(K*np.exp(mj))
+                    postDist.append(mj)
                     i = j
                     break
             j += 1
@@ -555,8 +560,10 @@ def LMSol(G,mprior,Cd,Cm,dobs,mu=1.,octTree=None):
         mlog -= dm*C
         iter += 1
     CmlogPost = Cm_log - P1.dot(smooth).dot(P1.transpose())
-    print(CmlogPost)
+    #cmlin = transformCov2Linear(CmlogPost,K)
+    #print(CmlogPost)
     mMl,cmlin = metropolisPosteriorCovariance(G,dobs,Cd,CmlogPost,mlog,K)
+    print(mMl - K*np.exp(mlog))
     return K*np.exp(mlog), cmlin
         
 if __name__=='__main__':
@@ -596,6 +603,7 @@ if __name__=='__main__':
     #m = BerrymanSol(G,dobs,mprior=None,Cd=Cd,Cm=None,mu=0.00)
     #m,Cm = SteepestDescent(octTree,rays,dobs,Cd,Cmprior,mprior)
     m,Cm = LMSol(G,mprior,Cd,Cmprior,dobs,mu=1.0,octTree=None)
+    #mayaviPlot(x,m,mprior)
     CmCm = Cm.dot(np.linalg.inv(Cmprior))
     R = np.eye(CmCm.shape[0]) - CmCm
     print("Resolved by dataSet:{0}, resolved by a priori:{1}".format(np.trace(R),np.trace(CmCm)))
@@ -613,69 +621,6 @@ if __name__=='__main__':
         plotOctTreeXZ(octTree,ax=None)
         plotOctTree3D(octTree,model=m,rays=False)
    
-
-
-# In[17]:
-
-from tvtk.api import tvtk
-from mayavi.sources.api import VTKDataSource
-from mayavi import mlab
-
-from scipy.interpolate import griddata
-
-xmin,ymin,zmin = np.min(x[:,0]),np.min(x[:,1]),np.min(x[:,2])
-xmax,ymax,zmax = np.max(x[:,0]),np.max(x[:,1]),np.max(x[:,2])
-X,Y,Z = np.meshgrid(np.linspace(xmin,xmax,100),
-                    np.linspace(ymin,ymax,100),
-                    np.linspace(zmin,zmax,100))
-field = griddata((x[:,0],x[:,1],x[:,2]),m-mexact,(X.flatten(),Y.flatten(),Z.flatten()),method='linear').reshape(X.shape)
-
-#mlab.contour3d(field,contours=2)
-mlab.pipeline.volume(mlab.pipeline.scalar_field(X,Y,Z,field))
-mlab.axes()
-mlab.show()
-#src = mlab.pipeline.scalar_scatter(X,Y,Z,m)
-#pts = mlab.pipeline.glyph(src,scale_mode='vector',scale_factor=10.)
-#field = mlab.pipeline.delaunay3d(src)
-#mlab.axes()
-#mlab.show()
-#field = mlab.pipeline.delaunay3d(
-
-
-# In[9]:
-
-from tvtk.api import tvtk
-#make data source
-i = tvtk.ImageData(spacing=minCellSize(octTree),origin=(0,0,0))
-i.point_data.scalars = m
-i.point_data.scalars.name = 'scalars'
-i.dimensions = (2**3,2**3,2**3)
-from mayavi import mlab
-mlab.pipeline.volume(i)
-#mlab.pipeline.iso_surface(i,contours=4,opacity=0.5)
-
-#from mayavi.api import Engine
-
-#fig = mlab.figure()
-
-#src = mlab.pipeline.scalar_scatter(x[:,0],x[:,1],x[:,2],m)
-#pts = mlab.pipeline.glyph(src,scale_mode='vector',scale_factor=10.)
-#field = mlab.pipeline.delaunay3d(src)
-#edges = mlab.pipeline.extract_edges(field)
-#mlab.points3d(src)
-#mlab.pipeline.iso_surface(mlab.pipeline.get_vtk_src(field),contours=5,transparent=True)
-mlab.axes()
-mlab.show()
-
-
-# In[3]:
-
-help(mlab.pipeline.volume)
-
-
-# In[14]:
-
-mayaviPlot(x,m,mprior)
 
 
 # In[ ]:
