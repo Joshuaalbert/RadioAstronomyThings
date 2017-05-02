@@ -13,7 +13,7 @@ def quadratic2elliptic(A,B,C,D=0,E=0,F=-np.log(2)):
         #A-C = A0 cos^2 phi + c0 sin^2 phi - a0 sin^2 phi - c0 cos^2 phi
         #A-C = A0 (cos^2 phi - sin^2 phi)- c0 (-sin^2 phi  + c0 cos^2 phi) = (A0 - C0) cos 2phi
         #(cos^2 phi - sin^2 phi) = cos 2 phi        
-        phi = np.arctan(B/(A-C))/2.#choose your own modulus
+        phi = np.arctan2(B,(A-C))/2.#choose your own modulus
     else:#circle
         phi = np.pi/4.#arbitrary, nonzero cos and sin for the rest
         phi = 0.
