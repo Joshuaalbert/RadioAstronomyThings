@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[ ]:
+# In[42]:
 
 '''Compute the posterior estimates of spectral index, S1.4GHz, and P1.4GHz
 as well as the posterior estimates of measured fluxes (S_i) using the Metropolis Hastings algorithm.
@@ -32,6 +32,8 @@ S_i is lognormal
 
 import numpy as np
 import pylab as plt
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
 
 def g(alpha,S14,nu):
     '''Forward equation, evaluate model at given nu array'''
@@ -180,12 +182,21 @@ def MHSolveSpectealIndex(nu,S,Cd,Ct,name,z,dz,nuModel=None,plot=False,plotDir=No
     #plot the Gassuan model and data
     if plot:
         plt.errorbar(nu, S, yerr=np.sqrt(CdCt), fmt='x',label='data')
-        plt.errorbar(nu, S_post_mu, yerr=[S_post_up,S_post_low], fmt='--o',label='model')
+        plt.errorbar(nuModel, S_post_mu, yerr=[S_post_up,S_post_low], fmt='--o',label='model')
         plt.xlabel(r"$\nu$ [Hz]")
         plt.ylabel(r"$S(\nu)$ [mJy]")
         #plt.plot(nu,S_map,label='map')
         #plt.errorbar(nu, S_model, yerr=CdCt[idx,mask], fmt='--o')
         plt.legend()
+        points = []
+        for j in range(len(nuModel)):
+            points.append((nuModel[j],S_post_mu[j] + S_post_up[j]))
+            #points.append((nuModel[j],S_post_mu[j] - S_post_low[j]))
+        for j in range(len(nuModel)):
+            #points.append((nuModel[j],S_post_mu[j] + S_post_up[j]))
+            points.append((nuModel[j],S_post_mu[-j-1] - S_post_low[-j-1]))
+            
+        plt.gca().add_collection(PatchCollection([Polygon(points,True)],alpha=0.4))
         plt.yscale('log')
         plt.xscale('log')
         if plotDir is not None:
@@ -303,7 +314,6 @@ if __name__ == '__main__':
                                                                                                  P14[i],P14u[i],P14l[i]))
         i += 1
     f, axs = plt.subplots(4,2)
-
     i=0
     while i < len(alpha):
         #i = row*2 + col
@@ -314,6 +324,10 @@ if __name__ == '__main__':
         mask[:] = True
         ax.errorbar(nu[mask], S[i,mask], yerr=np.sqrt(CdCt[i,mask]), fmt='x',label='data')
         ax.errorbar(nu, S_post_mu[i,:], yerr=[S_post_up[i,:],S_post_low[i,:]], fmt='--o',label='model')
+        for j in range(len(nu)):
+            points.append(S_post_mu[i,:] + S_post_up[i,:])
+            points.append(S_post_mu[i,:] - S_post_low[i,:])
+        ax.add_collection(Polygon(points,True))
         ax.set_yscale('log')
         ax.set_xscale('log')
         if col==1:
@@ -327,6 +341,58 @@ if __name__ == '__main__':
     #plt.setp([ax.get_xticklabels()for ax in f.axes],visible=False)
     #plt.setp([ax.get_yticklabels()for ax in f.axes],visible=False)
     plt.show()
+
+
+# In[38]:
+
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
+f, axs = plt.subplots(4,2,sharex=True,figsize=(6,4))
+cols= 2
+rows = 4
+i=0
+while i < len(alpha):
+    #i = row*2 + col
+    col = i%cols
+    row = (i - col)//cols
+    if rows == 1:
+        if cols == 1:
+            ax = axs
+        else:
+            ax = axs[col]
+    else:
+        ax = axs[row][col]
+    mask = detectionMask[i,:]
+    mask[:] = True
+    ax.errorbar(nu[mask], S[i,mask], yerr=np.sqrt(CdCt[i,mask]), fmt='x',label='data')
+    ax.errorbar(nu, S_post_mu[i,:], yerr=[S_post_up[i,:],S_post_low[i,:]], fmt='--o',label='model')
+    points = []
+    for j in range(len(nu)):
+        points.append((nu[j],S_post_mu[i,j] + S_post_up[i,j]))
+        points.append((nu[j],S_post_mu[i,j] - S_post_low[i,j]))
+    ax.add_collection(PatchCollection([Polygon(points,True)],alpha=0.4))
+    
+    #ax.set_ylim([])
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    ylims = list(ax.get_ylim())
+    ylims[0] = 10**(np.floor(np.log10(ylims[0])))
+    ylims[1] = 10**(np.ceil(np.log10(ylims[1])))
+    print(ylims)
+    ax.set_ylim(ylims)
+    ax.set_xticks([])#('right')
+    ax.set_xticklabels([])
+    if col==1:
+        ax.yaxis.set_label_position('right')
+    i += 1
+#axs[-1][0].set_xlabel(r'$\nu$ [Hz]')
+#axs[-1][1].set_xlabel(r'$\nu$ [Hz]')
+#axs[4>>1][0].set_ylabel(r'$S(\nu)$ [mJy]')
+f.subplots_adjust(hspace=0,wspace=0)
+
+plt.setp([ax.get_xticklabels() for ax in f.axes],visible=False)
+plt.setp([ax.get_yticklabels() for ax in f.axes],visible=False)
+plt.show()
 
 
 # In[ ]:
