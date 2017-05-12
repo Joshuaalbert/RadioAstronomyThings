@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[2]:
+# In[ ]:
 
 '''Compute the posterior estimates of spectral index, S1.4GHz, and P1.4GHz
 as well as the posterior estimates of measured fluxes (S_i) using the Metropolis Hastings algorithm.
@@ -42,7 +42,9 @@ def L(Sobs,alpha,S14,nu,CdCt):
     '''Likeihood for alpha and S14'''
     #only as nu_obs
     d = g(alpha,S14,nu)
-    return np.exp(-np.sum((Sobs - d)**2/CdCt)/2.)
+    L2 = np.sum((Sobs - d)**2/CdCt)
+    #L1 = np.sum(np.abs(Sobs - d)/np.sqrt(CdCt))
+    return np.exp(-L2/2.)
 
 def P(nu,z,alpha,S14):
     c = 3e8
@@ -138,15 +140,17 @@ def MHSolveSpectealIndex(nu,S,Cd,Ct,name,z,dz,nuModel=None,plot=False,plotDir=No
         plt.ylabel(r"Count")
         plt.title("alpha")
         if plotDir is not None:
-            plt.savefig("{}/{}-alpha-posterior.png".format(plotDir,name))
-        eles:
+            plt.savefig("{}/{}-alpha-posterior.png".format(plotDir,name),format='png')
+            plt.clf()
+        else:
             plt.show()
         plt.hist(S14_,bins=binning)
         plt.xlabel(r"$S_{\rm 1.4GHz}[mJy]$")
         plt.ylabel(r"Count")
         plt.title("S14")
         if plotDir is not None:
-            plt.savefig("{}/{}-S14-posterior.png".format(plotDir,name))
+            plt.savefig("{}/{}-S14-posterior.png".format(plotDir,name),format='png')
+            plt.clf()
         else:
             plt.show() 
         plt.hist(np.log10(S14_),bins=binning)
@@ -154,7 +158,8 @@ def MHSolveSpectealIndex(nu,S,Cd,Ct,name,z,dz,nuModel=None,plot=False,plotDir=No
         plt.ylabel(r"Count")
         plt.title("log(S14)")
         if plotDir is not None:
-            plt.savefig("{}/{}-logS14-posterior.png".format(plotDir,name))
+            plt.savefig("{}/{}-logS14-posterior.png".format(plotDir,name),format='png')
+            plt.clf()
         else:
             plt.show()
     print("---------")
@@ -184,7 +189,8 @@ def MHSolveSpectealIndex(nu,S,Cd,Ct,name,z,dz,nuModel=None,plot=False,plotDir=No
         plt.yscale('log')
         plt.xscale('log')
         if plotDir is not None:
-            plt.savefig("{}/{}-fluxes-posterior.png".format(plotDir,name))
+            plt.savefig("{}/{}-fluxes-posterior.png".format(plotDir,name),format='png')
+            plt.clf()
         else:
             plt.show()
     print("--------")
@@ -321,4 +327,9 @@ if __name__ == '__main__':
     #plt.setp([ax.get_xticklabels()for ax in f.axes],visible=False)
     #plt.setp([ax.get_yticklabels()for ax in f.axes],visible=False)
     plt.show()
+
+
+# In[ ]:
+
+
 
