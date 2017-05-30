@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[20]:
+# In[67]:
 
 """Optimal prioritizing of your tasks, in the sense of minimizing redundant memory footprint.
 Idea is to take the longest graph path with most dependancies so that you don't mentally backtrack so often.
@@ -27,14 +27,14 @@ import dask
 
 
 def requires(*args,time=0):
-    '''time is in days to do task'''
+    '''time is in time units to do task'''
     #print("Spend: approx. {} days".format(time))
     sleep(time/100.)
     #print(args)
     return time
 
 def input(time=0):
-    '''time is in days to do task'''
+    '''time is in time units to do task'''
     #print("Spend: approx. {} days".format(time))
     sleep(time/100.)
     #print(args)
@@ -72,6 +72,9 @@ def createDask(depDict,timeDict={}):
             dsk[key] = (partial(input, time=time),)
         else:
             dsk[key] = (partial(requires, time=time),depDict[key])
+            for dep in depDict[key]:
+                if dep not in depDict.keys():
+                    dsk[dep] = (partial(input, time=0),)
             
     return dsk
 
@@ -89,18 +92,18 @@ def getOrderOfExecution(dsk,finalTask, numConcurrentTasks=1):
             self.equivTime = None
             self.numWorkers = numWorkers
         def _start(self,dsk):
-            print("Working with {} concurrent mental tasks".format(self.numWorkers))
+            print("Working with {} concurrent tasks".format(self.numWorkers))
             self.startTime = clock()
         def _pretask(self, key, dask, state):
             """Print the key of every task as it's started"""
             pass
         def _posttask(self,key,result,dsk,state,id):
-            print("Do {}, approx. {} days".format(repr(key),repr(result)))
+            print("Do {} <- {}, approx. {} time units".format(repr(key),dsk[key][1:],repr(result)))
         def _finish(self,dsk,state,errored):
             self.endTime = clock()
             dt = (self.endTime - self.startTime)*100.
-            print("Approximate time to complete: {} days".format(dt))
-            print("Equivalent single thread time: {} days".format(dt*self.numWorkers))
+            print("Approximate time to complete: {} time units".format(dt))
+            print("Equivalent single thread time: {} time units".format(dt*self.numWorkers))
             self.equivTime = dt*self.numWorkers
     with PrintKeys(numConcurrentTasks):
         get(dsk,finalTask,num_workers=numConcurrentTasks)
@@ -271,13 +274,13 @@ if __name__ == '__main__':
            "Preconditioning":2,
           "Get working on Sim Data":5,
           "Forward equation":2,
-          "Calc Rays":2,
-          "Fermats Principle":2,
-          "Write interpolation":5,
-          "framework to handle data":7,
-          "DataPack":4,
-          "UVW frame":7,
-          "Gradient":5}
+          "Calc Rays":0,
+          "Fermats Principle":0,
+          "Write interpolation":2,
+          "framework to handle data":4,
+          "DataPack":0,
+          "UVW frame":0,
+          "Gradient":1}
 
     dsk = createDask(depDict,timeDict=timeDict)
     numTasks = getOptimalNumThreads(dsk,"URSI Present")
@@ -286,7 +289,62 @@ if __name__ == '__main__':
 
 
 
-# In[ ]:
+# In[74]:
 
+def deepflatten(nlist):
+    out = []
+    for i in nlist:
+        if isinstance(i,list):
+            out += deepflatten(i)
+        else:
+            out += [i]
+    return out
 
+def Fdot(n,v):
+    if n == 0:
+        return ['pull_F0',v]
+    d = deepflatten([Fdot(n-1,v), 'pull_beta{}'.format(n-1), v, 'dm{}'.format(n-1), 'dgamma{}'.format(n-1),'v{}'.format(n-1)])
+    return d
+
+N=5
+depDict = {}
+for n in range(N):
+    depDict['g{}'.format(n)] = ['pull_m{}'.format(n),'rays']
+    depDict['gamma{}'.format(n)] = ['g{}'.format(n),'dobs','mprior','rays','pull_m{}'.format(n),'CdCt','Cm']
+    depDict['phi{}'.format(n)] = ['F{}(gamma{})'.format(n,n)]
+    depDict['F{}(gamma{})'.format(n,n)] = Fdot(n,'pull_gamma{}'.format(n))
+    depDict['beta{}'.format(n)] = ['dgamma{}'.format(n),'dm{}'.format(n),'pull_gamma{}'.format(n)]
+    depDict['dgamma{}'.format(n)] = ['pull_gamma{}'.format(n+1),'pull_gamma{}'.format(n)]
+    depDict['dm{}'.format(n)] = ['pull_m{}'.format(n+1),'pull_m{}'.format(n)]
+    depDict['v{}'.format(n)] = ['pull_F{}(gamma{})'.format(n,n+1),'pull_F{}(gamma{})'.format(n,n)]
+    depDict['F{}(gamma{})'.format(n,n+1)] = Fdot(n,'pull_gamma{}'.format(n+1))
+    depDict['ep{}'.format(n)] = ['pull_phi{}'.format(n),'pull_m{}'.format(n),'rays']
+    depDict['m{}'.format(n+1)] = ['pull_m{}'.format(n),'ep{}'.format(n),'pull_phi{}'.format(n)]
+depDict['m0'] = ['mprior']
+depDict_pull = {}
+for key in depDict.keys():
+    #depDict_pull['store_{}'.format(key)] = [key]
+    #dep_pull = []
+    for dep in depDict[key]:
+        #dep_pull.append("pull_{}".format(dep))
+        if "pull" in dep:
+            depDict_pull[dep] = [dep.replace('pull','store')]
+            depDict_pull[dep.replace('pull','store')] = [dep.replace('pull_','')]
+    #depDict_pull[dep] = dep_pull
+
+depDict.update(depDict_pull)
+
+timeDict = {}
+for key in depDict.keys():
+    if "store" in key or "pull" in key:
+        timeDict[key] = 0
+    else:
+        timeDict[key] = 10
+        
+print(depDict)
+dsk = createDask(depDict,timeDict=timeDict)
+
+#numTasks = getOptimalNumThreads(dsk,"m2")
+getOrderOfExecution(dsk,"pull_m5",numConcurrentTasks=1)
+printGraph(dsk,"BFGS map")
 
