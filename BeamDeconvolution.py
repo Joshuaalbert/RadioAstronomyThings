@@ -137,19 +137,23 @@ def convolve(A1,B1,C1,A2,B2,C2):
     k = np.log(factor*2.)
     return A,B,C#,factor
 
-def findCommonBeam(beams, debugplots=False):
+def findCommonBeam(beams, debugplots=False,confidence=0.005):
     '''Given a list `beams` where each element of beams is a list of elliptic beam parameters (bmaj_i,bmin_i, bpa_i)
     with bpa in degrees
 
     return the beam parameters of the common beam of minimal area.
     
-    Common beam means that all beams can be convolved to the common beam.'''
+    Common beam means that all beams can be convolved to the common beam.
+    
+    `confidence` parameter is basically how confident you want solution. So 0.01 is knowing solution to 1%.
+    Specifically it's how long to sample so that there are enough statistics to properly sample likelihood with required accuracy.
+    default is 0.005. Computation time scale inversely with it.'''
     def beamArea(bmaj,bmin,bpa=None):
         return bmaj*bmin*np.pi/4./np.log(2.)
     def isCommonBeam(beamCandQuad,beamsQuad):
         for beamQuad in beamsQuad:
-            Ak,Bk,Ck = deconvolve(*beamCandQuad,*beamQuad)
             try:
+                Ak,Bk,Ck = deconvolve(*beamCandQuad,*beamQuad)
                 bmaj,bmin,bpa = quadratic2elliptic(Ak,Bk,Ck)
             except:
                 return False
@@ -197,8 +201,8 @@ def findCommonBeam(beams, debugplots=False):
     else:
         bmajMax = np.max(beams,axis=0)[0]
         beam0 = [bmajMax,bmajMax,0.]
-    #MC search
-    binning = 100
+    #MC search, 1/binning = confidence
+    binning = int(1./confidence)
     Nmax = 1e6
     beamsMH = np.zeros([binning*binning,3],dtype=np.double)
     beamsMul = np.zeros(binning*binning,dtype=np.double)
@@ -235,11 +239,20 @@ def findCommonBeam(beams, debugplots=False):
         beamsMul = beamsMul[:iter]
     if debugplots:
         import pylab as plt
-        plt.hist(beamsMH[:,0],bins=binning)
-        plt.show()
-        plt.hist(beamsMH[:,1],bins=binning)
-        plt.show()
-        plt.hist(beamsMH[:,2],bins=binning)
+#         plt.hist(beamsMH[:,0],bins=binning)
+#         plt.show()
+#         plt.hist(beamsMH[:,1],bins=binning)
+#         plt.show()
+#         plt.hist(beamsMH[:,2],bins=binning)
+#         plt.show()
+        from matplotlib.patches import Ellipse
+        ax = plt.subplot(1,1,1)
+        ax.add_artist(Ellipse(xy=(0,0), width=maxLBeam[0], height=maxLBeam[1], angle=maxLBeam[2], facecolor="none",edgecolor='red',alpha=1,label='common beam'))
+        for beam in beams:
+            ax.add_artist(Ellipse(xy=(0,0), width=beam[0], height=beam[1], angle=beam[2], facecolor="none",edgecolor='black',ls='--',alpha=1))
+        ax.set_xlim(-0.5,0.5)
+        ax.set_ylim(-0.5,0.5)
+        plt.legend(frameon=False)
         plt.show()
         
 #     meanBeam = np.sum(beamsMH.T*beamsMul,axis=1)/np.sum(beamsMul)
