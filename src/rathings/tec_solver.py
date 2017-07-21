@@ -2,6 +2,21 @@ from rathings.phase_unwrap import phase_unwrapp1d
 import numpy as np
 TECU = 1e12
 
+
+def calc_phase(tec, freqs, cs = 0.):
+    '''Return the phase  from tec and CS.
+    `tec` : `numpy.ndarray`
+        tec in TECU of shape (num_times,)
+    `freqs` : `numpy.ndarray`
+        freqs in Hz of shape (num_freqs,)
+    `cs` : `numpy.ndarray` or float (optional)
+        Can be zero to disregard (default)
+    '''
+    TECU=1e12
+    phase = 8.44797256e-7*TECU * np.multiply.outer(1./freqs,tec) + cs  
+    return phase
+
+
 def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solve=False):
     '''Solves for the terms phase(CS,TEC) = CS + e^2/(4pi ep0 me c) * TEC/nu
     
@@ -51,9 +66,9 @@ def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solv
         sigma_cs2 = cov_m[1]
         sigma_phase = np.sqrt(CdCt_phase)
         phase = obs_phase
-        #return np.sum(np.abs(K*np.multiply.outer(1./freqs,tec) - phase)/sigma_phase,axis=0)
+        #return np.nansum(np.abs(K*np.multiply.outer(1./freqs,tec) - phase)/sigma_phase,axis=0)
     
-        return beta*((tec - tec_p)**2/sigma_tec2 + (cs - cs_p)**2/sigma_cs2)/2 + np.sum(np.abs(K*np.multiply.outer(1./freqs,tec) + alpha*cs - phase)/sigma_phase,axis=0)
+        return beta*((tec - tec_p)**2/sigma_tec2 + (cs - cs_p)**2/sigma_cs2)/2 + np.nansum(np.abs(K*np.multiply.outer(1./freqs,tec) + alpha*cs - phase)/sigma_phase,axis=0)
     
     def calc_grad(obs_phase,m,CdCt_phase,m0,cov_m,freqs):
         
@@ -75,8 +90,8 @@ def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solv
         x3 = sigma_cs2
         
         grad = np.zeros([obs_phase.shape[1],2])
-        grad[:,0] = x0*(beta*(tec - tec_p)/x0 + np.sum((x1*x2),axis=0))
-        grad[:,1] = x3 * (beta*(cs - cs_p)/x3 + np.sum(alpha*x2,axis=0))
+        grad[:,0] = x0*(beta*(tec - tec_p)/x0 + np.nansum((x1*x2),axis=0))
+        grad[:,1] = x3 * (beta*(cs - cs_p)/x3 + np.nansum(alpha*x2,axis=0))
         return grad
     
     def calc_epsilon_n(dir,m,freqs,CdCt,obs_phase,step=1e-3):
@@ -85,7 +100,7 @@ def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solv
         gp = calc_phase(m + step*dir, freqs)
         Gm = (gp - g0)/step
         dd = obs_phase - g0
-        epsilon_n = (np.sum(Gm*dd/CdCt,axis=0)/np.sum(Gm/CdCt*Gm,axis=0))
+        epsilon_n = (np.nansum(Gm*dd/CdCt,axis=0)/np.nansum(Gm/CdCt*Gm,axis=0))
         return epsilon_n        
     
     if m0 is None:
@@ -100,7 +115,7 @@ def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solv
     Cd = (Cd_error*np.pi/180.)**2
     CdCt = Cd+Ct
     #print(np.sqrt(CdCt))
-    #print( np.sum(np.abs(calc_phase(m,freqs) - obs_phase)/np.sqrt(CdCt),axis=0))
+    #print( np.nansum(np.abs(calc_phase(m,freqs) - obs_phase)/np.sqrt(CdCt),axis=0))
     S = neglogL(obs_phase,m,CdCt,m0,cov_m,freqs)
     #print("Initial neglogL: {}".format(S))
     iter = 0
@@ -113,7 +128,7 @@ def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solv
         m += dir*epsilon_n
         S = neglogL(obs_phase,m,CdCt,m0,cov_m,freqs)
         #print("Model: {}".format(m))
-        #print("iter {}: neglogL: {}, log|dm/m|: {}, |grad|: {}".format(iter, S, np.mean(np.log(np.abs(np.einsum("i,ij->ij",epsilon_n,dir)/m))),np.sum(np.abs(grad))))
+        #print("iter {}: neglogL: {}, log|dm/m|: {}, |grad|: {}".format(iter, S, np.mean(np.log(np.abs(np.einsum("i,ij->ij",epsilon_n,dir)/m))),np.nansum(np.abs(grad))))
         iter += 1
     #print("Final neglogL: {}".format(S))
     return m
