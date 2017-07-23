@@ -45,7 +45,7 @@ def l1_lpsolver(obs_phase, freqs):
     lp = LPSolver(Aeq,beq,None,None,None,None,cobj,maximize=False,problem_name="l1_tec_solve", solver_type='SIMP')
     for i in range(len(freqs)):
         lp.set_variable_type(i,'c',('>',0.))
-        lp.set_variable_type(i+len(freqs)),'c',('>',0.))
+        lp.set_variable_type(i+len(freqs),'c',('>',0.))
     mippy_file = lp.compile()
     res = lp.submit_problem(mippy_file)
     for i in range(len(freqs)):
