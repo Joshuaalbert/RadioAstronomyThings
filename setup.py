@@ -3,17 +3,15 @@
 from setuptools import setup
 from setuptools import find_packages
 
-import rathings
 
 import os
 from setuptools import setup
 from setuptools.command.install import install
 import subprocess
 
+__minimum_numpy_version__ = '1.9.0'
 
-
-
-setup_requires = ['numpy>=' + mippy.__minimum_numpy_version__, 'astropy', 'dask']
+setup_requires = ['numpy>='+__minimum_numpy_version__, 'astropy']
 
 setup(name='rathings',
       version='0.0.1',
