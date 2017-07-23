@@ -1,4 +1,5 @@
 from rathings.phase_unwrap import phase_unwrapp1d
+from mippy import 
 import numpy as np
 TECU = 1e16
 
@@ -12,10 +13,45 @@ def calc_phase(tec, freqs, cs = 0.):
     `cs` : `numpy.ndarray` or float (optional)
         Can be zero to disregard (default)
     '''
-    TECU=1e12
+    TECU=1e16
     phase = 8.44797256e-7*TECU * np.multiply.outer(1./freqs,tec) + cs  
     return phase
 
+def l1_lpsolver(obs_phase, freqs):
+    '''Formulate the linear problem:
+    Minimize 1'.(z1 + z2) s.t.
+        phase = (z1 - z2) + K/nu*TEC
+        |z1 + z2| < max_allowed
+        min_tec < TEC < max_tec
+    assumes obs_phase and freqs are for a single timestamp.
+    '''
+    obs_phase = phase_unwrapp1d(obs_phase)
+    K = 8.44797256e-7*TECU
+    ncols = len(freqs)*2 + 1
+    Aeq = []
+    beq = []
+    for i in range(len(freqs)):
+        row = np.zeros(ncols,dtype=np.double)
+        row[i] = 1.
+        row[i + len(freqs)] = -1.
+        row[-1] = K/freqs[i]
+        if not np.isnan(obs_phase[i]):
+            Aeq.append(row)
+            beq.append(obs_phase[i])
+    cobj = np.ones(ncols,dtype= np.double)
+    cobs[-1] = 0.
+
+    
+    from mippy.lpsolver import LPSolver
+    lp = LPSolver(Aeq,beq,None,None,None,None,cobj,maximize=False,problem_name="l1_tec_solve", solver_type='SIMP')
+    for i in range(len(freqs)):
+        lp.set_variable_type(i,'c',('>',0.))
+        lp.set_variable_type(i+len(freqs)),'c',('>',0.))
+    mippy_file = lp.compile()
+    res = lp.submit_problem(mippy_file)
+    for i in range(len(freqs)):
+        assert res[i]*res[i+len(freqs)] == 0., "infeasible solution"
+    return res[-1]
 
 def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solve=False):
     '''Solves for the terms phase(CS,TEC) = CS + e^2/(4pi ep0 me c) * TEC/nu
@@ -43,6 +79,7 @@ def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solv
     Returns model of shape (num_timestamps, 2) where,
     m[:,0] = tec, m[:,1] = CS
     '''
+    obs_phase = phase_unwrapp1d(obs_phase,axis=0)
     alpha = 0.
     if CS_solve:
         alpha = 1.
