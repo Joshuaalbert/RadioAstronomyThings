@@ -4,7 +4,7 @@ TECU = 1e16
 
 
 def calc_phase(tec, freqs, cs = 0.):
-    '''Return the phase  from tec and CS.
+    '''Return the phase (num_freqs, num_times) from tec and CS.
     `tec` : `numpy.ndarray`
         tec in TECU of shape (num_times,)
     `freqs` : `numpy.ndarray`
@@ -16,7 +16,7 @@ def calc_phase(tec, freqs, cs = 0.):
     phase = 8.44797256e-7*TECU * np.multiply.outer(1./freqs,tec) + cs  
     return phase
 
-def l1_lpsolver(obs_phase, freqs):
+def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
     '''Formulate the linear problem:
     Minimize 1'.(z1 + z2) s.t.
         phase = (z1 - z2) + K/nu*TEC
@@ -24,33 +24,132 @@ def l1_lpsolver(obs_phase, freqs):
         min_tec < TEC < max_tec
     assumes obs_phase and freqs are for a single timestamp.
     '''
-    obs_phase = phase_unwrapp1d(obs_phase)
+    obs_phase_unwrap = phase_unwrapp1d(obs_phase)
     K = 8.44797256e-7*TECU
-    ncols = len(freqs)*2 + 1
-    Aeq = []
-    beq = []
-    for i in range(len(freqs)):
+    #z+, z-, a+, a-, asigma, a, sigma, tec, cs
+    N = len(freqs)
+    ncols = N*6 + 3
+    A_eq, b_eq = [],[]
+    A_lt, b_lt = [],[]
+    A_gt, b_gt = [],[]
+    c_obj = np.zeros(ncols,dtype=np.double)
+    upper_limit_fudge = 1.
+    for i in range(N):
+        idx_p = i
+        idx_m = N + i
+        idx_ap = 2*N + i
+        idx_am = 3*N + i
+        idx_as = 4*N + i
+        idx_a = 5*N + i
+        idx_s = 6*N
+        idx_tec = 6*N + 1
+        idx_cs = 6*N + 2
+        # 0<= a+ <= asigma
         row = np.zeros(ncols,dtype=np.double)
-        row[i] = 1.
-        row[i + len(freqs)] = -1.
-        row[-1] = K/freqs[i]
-        if not np.isnan(obs_phase[i]):
-            Aeq.append(row)
-            beq.append(obs_phase[i])
-    cobj = np.ones(ncols,dtype= np.double)
-    cobs[-1] = 0.
-
+        row[[idx_ap,idx_as]] = 1., -1.*upper_limit_fudge
+        A_lt.append(row)
+        b_lt.append(0.)
+        # 0 <= z+ - a+ <= sigma - asigma
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_p,idx_ap, idx_s, idx_as]] = 1., -1., -1., 1.*upper_limit_fudge
+        A_lt.append(row)
+        b_lt.append(0.)
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_p,idx_ap]] = 1., -1.
+        A_gt.append(row)
+        b_gt.append(0.)
+        #same for a-
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_am,idx_as]] = 1., -1.*upper_limit_fudge
+        A_lt.append(row)
+        b_lt.append(0.)
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_m,idx_am, idx_s, idx_as]] = 1., -1., -1., 1.*upper_limit_fudge
+        A_lt.append(row)
+        b_lt.append(0.)
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_m,idx_am]] = 1., -1.
+        A_gt.append(row)
+        b_gt.append(0.)
+        # 0 <= asigma <= a*sigma_max
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_s,idx_a]] = 1., -sigma_max
+        A_lt.append(row)
+        b_lt.append(0.)
+        # 0 <= sigma - asigma <= sigma_max - a*sigma_max
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_s,idx_as, idx_a]] = 1., -1., sigma_max
+        A_lt.append(row)
+        b_lt.append(sigma_max)
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_s,idx_as]] = 1., -1.
+        A_gt.append(row)
+        b_gt.append(0.)
+        # a+ + a- >= asigma
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_ap,idx_am, idx_as]] = 1., -1., -1.
+        A_gt.append(row)
+        b_gt.append(0.)
+        # z+ + z- - a+ - a- <= sigma - asigma
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_p, idx_m, idx_ap, idx_am, idx_s, idx_as]] = 1., 1., -1., -1., -1., 1.
+        A_lt.append(row)
+        b_lt.append(0.)
+        # z+ - z- + K/nu*tec + cs = phase
+        row = np.zeros(ncols,dtype=np.double)
+        row[[idx_p, idx_m, idx_tec, idx_cs]] = 1., -1., K/freqs[i], 1.
+        A_eq.append(row)
+        b_eq.append(obs_phase_unwrap[i])
+        # minimize z+ + z- - a+ - a- + Nsigma_max
+        c_obj[[idx_p, idx_m, idx_ap, idx_am,idx_s]] = 1., 1., -1., -1.,N
+    row = np.zeros(ncols,dtype=np.double)
+    for i in range(N):
+        idx_a = 5*N + i
+        # sum a < fout * N
+        row[idx_a] = 1.
+    A_lt.append(row)
+    b_lt.append(fout*N)
+    
+    A_eq, b_eq = np.array(A_eq), np.array(b_eq)
+    A_lt, b_lt = np.array(A_lt), np.array(b_lt)
+    A_gt, b_gt = np.array(A_gt), np.array(b_gt)
+    
     
     from mippy.lpsolver import LPSolver
-    lp = LPSolver(Aeq,beq,None,None,None,None,cobj,maximize=False,problem_name="l1_tec_solve", solver_type='SIMP')
+    lp = LPSolver(A_eq, b_eq, A_lt, b_lt, A_gt, b_gt, c_obj,maximize=False,problem_name="l1_tec_solve", solver_type='SIMP')
     for i in range(len(freqs)):
-        lp.set_variable_type(i,'c',('>',0.))
-        lp.set_variable_type(i+len(freqs),'c',('>',0.))
+        idx_p = i
+        idx_m = N + i
+        idx_ap = 2*N + i
+        idx_am = 3*N + i
+        idx_as = 4*N + i
+        idx_a = 5*N + i
+        idx_s = 6*N
+        idx_tec = 6*N + 1
+        idx_cs = 6*N + 2
+        lp.set_variable_type(idx_p,'c',('>',0.))
+        lp.set_variable_type(idx_m,'c',('>',0.))
+        lp.set_variable_type(idx_ap,'c',('>',0.))
+        lp.set_variable_type(idx_am,'c',('>',0.))
+        lp.set_variable_type(idx_as,'c',('>',0.))
+        lp.set_variable_type(idx_a,'i',('<>',0., 1.))
+        lp.set_variable_type(idx_s,'c',('<>',0., sigma_max))
+        lp.set_variable_type(idx_tec,'c',('*',))
+        lp.set_variable_type(idx_cs,'c',('*',))
     mippy_file = lp.compile()
     res = lp.submit_problem(mippy_file)
     for i in range(len(freqs)):
-        assert res[i]*res[i+len(freqs)] == 0., "infeasible solution"
-    return res[-1]
+        idx_p = i
+        idx_m = N + i
+        idx_ap = 2*N + i
+        idx_am = 3*N + i
+        idx_as = 4*N + i
+        idx_a = 5*N + i
+        idx_s = 6*N
+        idx_tec = 6*N + 1
+        idx_cs = 6*N + 2
+        assert np.isclose(res[idx_p]*res[idx_m], 0.) , "infeasible solution, {},{}".format(res[idx_p],res[idx_m])
+    return res[[6*N, 6*N+1, 6*N+2]]
 
 def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solve=False):
     '''Solves for the terms phase(CS,TEC) = CS + e^2/(4pi ep0 me c) * TEC/nu
