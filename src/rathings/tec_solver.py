@@ -16,7 +16,52 @@ def calc_phase(tec, freqs, cs = 0.):
     phase = 8.44797256e-7*TECU * np.multiply.outer(1./freqs,tec) + cs  
     return phase
 
-def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
+def robust_l2(obs_phase, freqs, solve_cs=True):
+    '''Solve the tec and cs for multiple datasets.
+    `obs_phase` : `numpy.ndarray`
+        the measured phase with shape (num_freqs, )
+    `freqs` : `numpy.ndarray`
+        the frequencies at the datapoints (num_freqs,)
+    `solve_cs` : (optional) bool
+        Whether to solve cs (True)
+    '''
+    from scipy.optimize import least_squares
+    def residuals(m, freqs, obs_phase):
+        tec,cs = m[0],m[1]
+        if solve_cs:
+            return calc_phase(tec,freqs,cs=cs) - obs_phase
+        else:
+            return calc_phase(tec,freqs,cs=0.) - obs_phase
+    m0 = [0., 0.]
+    m = least_squares(residuals,m0,loss='soft_l1',f_scale=50.*np.pi/180.,args=(freqs,obs_phase))
+    if solve_cs:
+        return m[0], m[1]
+    else:
+        return m[0], 0.
+    
+def robust_l2_parallel(obs_phase, freqs, sigma_max = np.pi, fout=0.5, solve_cs=True, num_threads = None):
+    '''Solve the tec and cs for multiple datasets.
+    `obs_phase` : `numpy.ndarray`
+        the measured phase with shape (num_freqs, num_datasets)
+    `freqs` : `numpy.ndarray`
+        the frequencies at the datapoints (num_freqs,)
+    `solve_cs` : (optional) bool
+        Whether to solve cs (True)
+    `num_threads` : (optional) `int`
+        number of parallel threads to run. default None is num_cpu
+    '''
+    from dask import delayed, compute
+    from dask.distributed import Client
+    from functools import partial
+    dsk = {}
+    assert len(obs_phase.shape) == 2, "obs_phase not dim 2 {}".format(obs_phase.shape)
+    N = obs_phase.shape[1]
+    values = [delayed(partial(robust_l2, solve_cs=solve_cs), pure=True)( obs_phase[:,i], freqs) for i in range(N)]
+    client = Client()
+    results = compute(*values, get=client.get)
+    return results
+
+def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5, solve_cs=True, problem_name="l1_tec_solver"):
     '''Formulate the linear problem:
     Minimize 1'.(z1 + z2) s.t.
         phase = (z1 - z2) + K/nu*TEC
@@ -24,6 +69,11 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
         min_tec < TEC < max_tec
     assumes obs_phase and freqs are for a single timestamp.
     '''
+    nan_mask = np.isnan(obs_phase)
+    obs_phase = obs_phase[np.bitwise_not(nan_mask)]
+    freqs = freqs[np.bitwise_not(nan_mask)]
+    if (len(freqs)<10):
+        return 0.,0.,0.
     obs_phase_unwrap = phase_unwrapp1d(obs_phase)
     K = 8.44797256e-7*TECU
     #z+, z-, a+, a-, asigma, a, sigma, tec, cs
@@ -33,7 +83,6 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
     A_lt, b_lt = [],[]
     A_gt, b_gt = [],[]
     c_obj = np.zeros(ncols,dtype=np.double)
-    upper_limit_fudge = 1.
     for i in range(N):
         idx_p = i
         idx_m = N + i
@@ -46,12 +95,12 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
         idx_cs = 6*N + 2
         # 0<= a+ <= asigma
         row = np.zeros(ncols,dtype=np.double)
-        row[[idx_ap,idx_as]] = 1., -1.*upper_limit_fudge
+        row[[idx_ap,idx_as]] = 1., -1.
         A_lt.append(row)
         b_lt.append(0.)
         # 0 <= z+ - a+ <= sigma - asigma
         row = np.zeros(ncols,dtype=np.double)
-        row[[idx_p,idx_ap, idx_s, idx_as]] = 1., -1., -1., 1.*upper_limit_fudge
+        row[[idx_p,idx_ap, idx_s, idx_as]] = 1., -1., -1., 1.
         A_lt.append(row)
         b_lt.append(0.)
         row = np.zeros(ncols,dtype=np.double)
@@ -60,11 +109,11 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
         b_gt.append(0.)
         #same for a-
         row = np.zeros(ncols,dtype=np.double)
-        row[[idx_am,idx_as]] = 1., -1.*upper_limit_fudge
+        row[[idx_am,idx_as]] = 1., -1.
         A_lt.append(row)
         b_lt.append(0.)
         row = np.zeros(ncols,dtype=np.double)
-        row[[idx_m,idx_am, idx_s, idx_as]] = 1., -1., -1., 1.*upper_limit_fudge
+        row[[idx_m,idx_am, idx_s, idx_as]] = 1., -1., -1., 1.
         A_lt.append(row)
         b_lt.append(0.)
         row = np.zeros(ncols,dtype=np.double)
@@ -97,7 +146,10 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
         b_lt.append(0.)
         # z+ - z- + K/nu*tec + cs = phase
         row = np.zeros(ncols,dtype=np.double)
-        row[[idx_p, idx_m, idx_tec, idx_cs]] = 1., -1., K/freqs[i], 1.
+        if solve_cs:
+            row[[idx_p, idx_m, idx_tec, idx_cs]] = 1., -1., K/freqs[i], 1.
+        else:
+            row[[idx_p, idx_m, idx_tec, idx_cs]] = 1., -1., K/freqs[i], 0.
         A_eq.append(row)
         b_eq.append(obs_phase_unwrap[i])
         # minimize z+ + z- - a+ - a- + Nsigma_max
@@ -116,7 +168,7 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
     
     
     from mippy.lpsolver import LPSolver
-    lp = LPSolver(A_eq, b_eq, A_lt, b_lt, A_gt, b_gt, c_obj,maximize=False,problem_name="l1_tec_solve", solver_type='SIMP')
+    lp = LPSolver(c_obj,A_eq=A_eq, b_eq=b_eq, A_lt=A_lt, b_lt=b_lt, A_gt=A_gt, b_gt=b_gt, maximize=False,problem_name=problem_name, solver_type='SIMP')
     for i in range(len(freqs)):
         idx_p = i
         idx_m = N + i
@@ -136,8 +188,8 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
         lp.set_variable_type(idx_s,'c',('<>',0., sigma_max))
         lp.set_variable_type(idx_tec,'c',('*',))
         lp.set_variable_type(idx_cs,'c',('*',))
-    mippy_file = lp.compile()
-    res = lp.submit_problem(mippy_file)
+    lp.compile()
+    res = lp.submit_problem()
     for i in range(len(freqs)):
         idx_p = i
         idx_m = N + i
@@ -150,6 +202,34 @@ def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5):
         idx_cs = 6*N + 2
         assert np.isclose(res[idx_p]*res[idx_m], 0.) , "infeasible solution, {},{}".format(res[idx_p],res[idx_m])
     return res[[6*N, 6*N+1, 6*N+2]]
+
+def l1_lpsolver_parallel(obs_phase, freqs, sigma_max = np.pi, fout=0.5, solve_cs=True, problem_name="l1_tec_solver",num_threads = None):
+    '''Solve the tec and cs for multiple datasets.
+    `obs_phase` : `numpy.ndarray`
+        the measured phase with shape (num_freqs, num_datasets)
+    `freqs` : `numpy.ndarray`
+        the frequencies at the datapoints (num_freqs,)
+    `sigma_max` : (optional) `float`
+        the maximum allowed deviation for outlier detection. default np.pi
+    `fout` : (optional) `float`
+        The maximum fraction of allowed outliers out of total number of datapoints. default 0.5
+    `solve_cs` : (optional) bool
+        Whether to solve cs (True)
+    `num_threads` : (optional) `int`
+        number of parallel threads to run. default None is num_cpu
+    `problem_name` : (optional) `str`
+        name of problem "l1_tec_solver"
+    '''
+    from dask import delayed, compute
+    from dask.threaded import get
+    from functools import partial
+    dsk = {}
+    assert len(obs_phase.shape) == 2, "obs_phase not dim 2 {}".format(obs_phase.shape)
+    N = obs_phase.shape[1]
+    values = [delayed(partial(l1_lpsolver, sigma_max=sigma_max, fout=fout,solve_cs=solve_cs, problem_name="{}{:03d}".format(problem_name,i)), pure=True)( obs_phase[:,i], freqs) for i in range(N)]
+    #client = Client()
+    results = compute(*values, get=get, num_workers=num_threads)
+    return results
 
 def l1data_l2model_solve(obs_phase,freqs,Cd_error,Ct_ratio=0.01,m0=None, CS_solve=False):
     '''Solves for the terms phase(CS,TEC) = CS + e^2/(4pi ep0 me c) * TEC/nu
