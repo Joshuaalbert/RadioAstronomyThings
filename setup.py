@@ -11,7 +11,7 @@ import subprocess
 
 __minimum_numpy_version__ = '1.9.0'
 
-setup_requires = ['numpy>='+__minimum_numpy_version__, 'astropy','mippy']
+setup_requires = ['numpy>='+__minimum_numpy_version__, 'astropy']
 
 setup(name='rathings',
       version='0.0.1',
