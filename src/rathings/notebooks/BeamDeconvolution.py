@@ -185,6 +185,7 @@ def findCommonBeam(beams, debugplots=False,confidence=0.005):
         area = beamArea(*beam)
         L2 = (area - areaLargest)**2/2.
         return L2
+    
     #Get beam areas
     N = len(beams)
     areas = []
@@ -376,4 +377,10 @@ if __name__ == '__main__':
 #     test_timing()
     test_findCommonBeam()
       
+
+
+# In[ ]:
+
+
+
 

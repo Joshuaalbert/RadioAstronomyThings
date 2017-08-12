@@ -1,5 +1,7 @@
 from rathings.phase_unwrap import phase_unwrapp1d 
 import numpy as np
+from scipy.optimize import least_squares
+
 TECU = 1e16
 
 
@@ -25,21 +27,25 @@ def robust_l2(obs_phase, freqs, solve_cs=True):
     `solve_cs` : (optional) bool
         Whether to solve cs (True)
     '''
-    from scipy.optimize import least_squares
-    def residuals(m, freqs, obs_phase):
-        tec,cs = m[0],m[1]
-        if solve_cs:
-            return calc_phase(tec,freqs,cs=cs) - obs_phase
-        else:
-            return calc_phase(tec,freqs,cs=0.) - obs_phase
-    m0 = [0., 0.]
-    m = least_squares(residuals,m0,loss='soft_l1',f_scale=50.*np.pi/180.,args=(freqs,obs_phase))
     if solve_cs:
-        return m[0], m[1]
+        def residuals(m, freqs, obs_phase):
+            tec,cs = m[0],m[1]
+            return calc_phase(tec,freqs,cs=cs) - obs_phase
     else:
-        return m[0], 0.
+        def residuals(m, freqs, obs_phase):
+            tec,cs = m[0],m[1]
+            return calc_phase(tec,freqs,cs=0.) - obs_phase
+    nan_mask = np.bitwise_not(np.isnan(obs_phase))
+    obs_phase_ = obs_phase[nan_mask]
+    freqs_ = freqs[nan_mask]
+    m0 = [0.0, 0.]
+    m = least_squares(residuals,m0,loss='soft_l1',f_scale=90.*np.pi/180.,args=(freqs_,obs_phase_))
+    if solve_cs:
+        return m.x[0], m.x[1]
+    else:
+        return m.x[0], 0.
     
-def robust_l2_parallel(obs_phase, freqs, sigma_max = np.pi, fout=0.5, solve_cs=True, num_threads = None):
+def robust_l2_parallel(obs_phase, freqs, solve_cs=True, num_threads = None):
     '''Solve the tec and cs for multiple datasets.
     `obs_phase` : `numpy.ndarray`
         the measured phase with shape (num_freqs, num_datasets)
@@ -51,14 +57,12 @@ def robust_l2_parallel(obs_phase, freqs, sigma_max = np.pi, fout=0.5, solve_cs=T
         number of parallel threads to run. default None is num_cpu
     '''
     from dask import delayed, compute
-    from dask.distributed import Client
+    from dask import get
     from functools import partial
     dsk = {}
-    assert len(obs_phase.shape) == 2, "obs_phase not dim 2 {}".format(obs_phase.shape)
     N = obs_phase.shape[1]
     values = [delayed(partial(robust_l2, solve_cs=solve_cs), pure=True)( obs_phase[:,i], freqs) for i in range(N)]
-    client = Client()
-    results = compute(*values, get=client.get)
+    results = compute(*values, get=get, num_workers=num_threads)
     return results
 
 def l1_lpsolver(obs_phase, freqs, sigma_max = np.pi, fout=0.5, solve_cs=True, problem_name="l1_tec_solver"):

@@ -1,7 +1,8 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[ ]:
+
 
 '''Compute the posterior estimates of spectral index, S1.4GHz, and P1.4GHz
 as well as the posterior estimates of measured fluxes (S_i) using the Metropolis Hastings algorithm.
@@ -365,7 +366,8 @@ if __name__ == '__main__':
     plt.show()
 
 
-# In[23]:
+# In[ ]:
+
 
 def plotSpectrum(nu,S,CdCt,S_post_mu,S_post_up,S_post_low, mask, ax):
     ax.errorbar(nu[mask], S[mask], yerr=np.sqrt(CdCt[mask]), fmt='x',label='data')
@@ -426,6 +428,7 @@ plt.show()
 
 
 # In[ ]:
+
 
 
 
