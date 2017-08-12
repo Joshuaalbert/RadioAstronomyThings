@@ -57,7 +57,7 @@ def robust_l2_parallel(obs_phase, freqs, solve_cs=True, num_threads = None):
         number of parallel threads to run. default None is num_cpu
     '''
     from dask import delayed, compute
-    from dask import get
+    from dask.threaded import get
     from functools import partial
     dsk = {}
     N = obs_phase.shape[1]
