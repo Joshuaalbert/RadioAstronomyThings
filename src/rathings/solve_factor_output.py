@@ -30,35 +30,16 @@ def calc_phase(tec, freqs, cs = 0.):
     phase = 8.44797256e-7*TECU * np.multiply.outer(1./freqs,tec) + cs  
     return phase
 
-def print_attrs(name, obj):
+def print_name(name, obj):
+    '''Print all parts of hdf5. Use with visititems.'''
     #if "facet_patch" not in name or 'dir' in name:
     #    return
-    if not isinstance(obj,h5py.Group):
-        return
-    print("Solving {}".format(name))
-    phase = obj['phase'][...]
-    phase[phase==0] = np.nan
-    phase = phase - phase[4,...]
-    ni = phase.shape[0]
-    f = plt.figure(figsize=(7*4,7*4))
-    
-    res = tec_solver.l1_lpsolver_parallel(phase[-1,::5,:],freqs[::5],fout=0.5,solve_cs=True)
-    #res = tec_solver.robust_l2_parallel(phase[:,::5,0].T,freqs[::5],solve_cs=True)
-
-    for i,(sigma_out, TEC, CS) in zip(range(ni),res):
-        print("Solution to {}: sigma outlier thresh {}, tec {} cs {}".format(ants[i],sigma_out*180./np.pi,TEC,CS))
-        #m = tec_solver.l1data_l2model_solve(phase[i,:,:1],freqs,5,CS_solve=False,m0=np.array([[0.,0.]]))
-        ax = plt.subplot(7,7,i+1)
-        ax.plot(freqs,phase[-1,:,i])
-        ax.set_ylim(-np.pi,np.pi)
-        rec_phase = np.angle(np.exp(1j*calc_phase(TEC,freqs,cs=CS)))# calc_phase(m[0,0],freqs,cs=m[0,1]
-        ax.plot(freqs,rec_phase)
-        ax.set_title(str(ants[-1]))
-    plt.savefig("{}_timestamp{}_robust_l2.pdf".format(name,1),format='pdf')
-    plt.show()
-      
+    #if not isinstance(obj,h5py.Group):
+    #    return
+    print("{}".format(name))      
     
 def plot_along_time(name, obj, freqs=None,start_time=0, stop_time=49, reference_ant = 'CS005HBA0'):
+   """Plot the phase for each antenna and time stamps between start_time and stop_time"""
     #if "facet_patch" not in name or 'dir' in name:
     #    return
     assert stop_time > start_time or stop_time == -1
@@ -82,6 +63,7 @@ def plot_along_time(name, obj, freqs=None,start_time=0, stop_time=49, reference_
     plt.show()
 
 def solve_patch(name, obj, freqs = None, data_dict=None, start_time=0, stop_time=49, reference_ant = 'CS005HBA0'):
+    '''The function that gets run on each group object in hdf5. Solves dtec and puts into data_dict for creation of datapack. Used with visititems and partial.'''
     #if "facet_patch" not in name or 'dir' in name:
     #    return
     assert stop_time > start_time or stop_time == -1
@@ -93,6 +75,8 @@ def solve_patch(name, obj, freqs = None, data_dict=None, start_time=0, stop_time
     nant = phase.shape[0]
     nfreq = phase.shape[1]
     ntime = phase.shape[2]
+    if stop_time==-1:
+        stop_time = ntime
     dir = obj['dir']#icrs pointing
     data_dict['directions'].append(dir)
     data_dict['patch_names'].append(name)
@@ -103,7 +87,14 @@ def solve_patch(name, obj, freqs = None, data_dict=None, start_time=0, stop_time
         dtec[i,:] = np.array(tecs)
     data_dict['dtec'].append(dtec)
           
-def solve_dtec(data_file,start_time=0,stop_time=-1):
+def solve_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_antenna='CS005HBA0'):
+    '''Create the datapack of the entire observation stored in data_file.
+    data_file is created by the transfer2hdf5 program which turns a facet
+    calibration into managable data format. 
+    Creates a datapack in the same directory unless datapack_file is given.
+    start_time, end_time give the indices along timeaxis to do solve on.
+    Use 0 and -1 for full time. Reference_antenna is the name of lofar 
+    station to use as reference.'''
     from ionotomo.astro.real_data import DataPack
     from ionotomo.astro.radio_array import RadioArray
     h = h5py.File(data_file,'r')
@@ -126,8 +117,14 @@ def solve_dtec(data_file,start_time=0,stop_time=-1):
     data_dict['directions'] = dirs
     data_dict['dtec'] = np.stack(data_dict['dtec'],axis=-1)
     datapack = DataPack(data_dict=data_dict)
-    datapack.set_reference_antenna('CS005HBA0')
-    datapack.save(data_file.replace('.hdf5','-datapack.hdf5'))
+    try:
+        datapack.set_reference_antenna(reference_antenna)
+    except:
+        datapack.set_reference_antenna(antenna_labels[0])
+    if datapack_file is None:
+        datapack.save(data_file.replace('.hdf5','-datapack.hdf5'))
+    else:
+        datapack.save(datapack_file)
 
 if __name__=='__main__':
     solve_dtec('../../../goods-n.hdf5',start_time=0,stop_time=20)    
