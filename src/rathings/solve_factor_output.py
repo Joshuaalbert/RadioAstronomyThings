@@ -62,7 +62,7 @@ def plot_along_time(name, obj, freqs=None,start_time=0, stop_time=49, reference_
         #ax.plot(times[start_time:stop_time], tecs)
     plt.show()
 
-def solve_patch(name, obj, freqs = None, data_dict=None, start_time=0, stop_time=49, reference_ant = 'CS005HBA0'):
+def solve_patch(name, obj, freqs = None, data_dict=None, start_time=0, stop_time=49, reference_ant = 'CS005HBA0',num_threads = None):
     '''The function that gets run on each group object in hdf5. Solves dtec and puts into data_dict for creation of datapack. Used with visititems and partial.'''
     #if "facet_patch" not in name or 'dir' in name:
     #    return
@@ -82,12 +82,12 @@ def solve_patch(name, obj, freqs = None, data_dict=None, start_time=0, stop_time
     data_dict['patch_names'].append(name)
     dtec = np.zeros([nant,ntime],dtype=float)
     for i in range(nant):
-        res = robust_l2_parallel(phase[i,:,start_time:stop_time],freqs[:],solve_cs=True,num_threads=16)
+        res = robust_l2_parallel(phase[i,:,start_time:stop_time],freqs[:],solve_cs=True,num_threads=num_threads)
         tecs = [tec for (tec,_) in res]
         dtec[i,:] = np.array(tecs)
     data_dict['dtec'].append(dtec)
           
-def solve_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_antenna='CS005HBA0'):
+def solve_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_antenna='CS005HBA0',num_threads = None):
     '''Create the datapack of the entire observation stored in data_file.
     data_file is created by the transfer2hdf5 program which turns a facet
     calibration into managable data format. 
@@ -111,7 +111,7 @@ def solve_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_
     data_dict = {'radio_array':radio_array,'antennas':antennas,'antenna_labels':antenna_labels,'times':times,'timestamps':times.isot,'directions':[],'patch_names':[],'dtec':[]}
     from functools import partial
     #h.visititems(partial(plot_along_time,freqs=freqs,start_time=start_time,stop_time=stop_time))
-    h.visititems(partial(solve_patch,freqs=freqs,data_dict=data_dict,start_time=start_time,stop_time=stop_time))
+    h.visititems(partial(solve_patch,freqs=freqs,data_dict=data_dict,start_time=start_time,stop_time=stop_time,num_threads =num_threads))
     dirs = np.array(data_dict['directions'])
     dirs = ac.SkyCoord(dirs[:,0]*au.rad,dirs[:,1]*au.rad,frame='icrs')
     data_dict['directions'] = dirs
@@ -127,4 +127,4 @@ def solve_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_
         datapack.save(datapack_file)
 
 if __name__=='__main__':
-    solve_dtec('../../../goods-n.hdf5',start_time=0,stop_time=20)    
+    solve_dtec('../../../goods-n.hdf5',start_time=0,stop_time=20,num_threads = 16)    
