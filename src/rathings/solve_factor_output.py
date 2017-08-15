@@ -39,7 +39,7 @@ def print_name(name, obj):
     print("{}".format(name))      
     
 def plot_along_time(name, obj, freqs=None,start_time=0, stop_time=49, reference_ant = 'CS005HBA0'):
-   """Plot the phase for each antenna and time stamps between start_time and stop_time"""
+    """Plot the phase for each antenna and time stamps between start_time and stop_time"""
     #if "facet_patch" not in name or 'dir' in name:
     #    return
     assert stop_time > start_time or stop_time == -1
@@ -127,4 +127,4 @@ def solve_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_
         datapack.save(datapack_file)
 
 if __name__=='__main__':
-    solve_dtec('../../../goods-n.hdf5',start_time=0,stop_time=20,num_threads = 16)    
+    solve_dtec('../../goods-n.hdf5',start_time=0,stop_time=20,num_threads = 16)    
