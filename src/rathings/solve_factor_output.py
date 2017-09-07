@@ -1,6 +1,7 @@
 
 
 from rathings.tec_solver import robust_l2_parallel, robust_l2
+from rathings.phase_unwrap import *
 import h5py
 import pylab as plt
 import numpy as np
@@ -38,14 +39,14 @@ def print_name(name, obj):
     #    return
     print("{}".format(name))      
     
-def plot_along_time(name, obj, freqs=None,start_time=0, stop_time=49, reference_ant = 'CS005HBA0'):
+def plot_along_time(name, obj, freqs=None,start_time=0, stop_time=49, reference_ant = 'CS005HBA0',num_threads = None, ants=None):
     """Plot the phase for each antenna and time stamps between start_time and stop_time"""
     #if "facet_patch" not in name or 'dir' in name:
     #    return
     assert stop_time > start_time or stop_time == -1
     if not isinstance(obj,h5py.Group):
         return
-    print("Solving {}".format(name))
+    print("Plotting {}".format(name))
     phase = obj['phase'][...]
     phase[phase==0] = np.nan
     nant = phase.shape[0]
@@ -54,12 +55,30 @@ def plot_along_time(name, obj, freqs=None,start_time=0, stop_time=49, reference_
     N = stop_time - start_time
     n_per_axis = np.ceil(np.sqrt(nant))
     f1 = plt.figure(figsize=(n_per_axis*4,n_per_axis*3))
+    f2 = plt.figure(figsize=(n_per_axis*4,n_per_axis*3))
     for i in range(nant):
         #res = tec_solver.l1_lpsolver_parallel(phase[i,::5,start_time:stop_time],freqs[::5],fout=0.5,solve_cs=True,num_threads=16)
+        res = robust_l2_parallel(phase[i,:,start_time:stop_time],freqs[:],solve_cs=True,num_threads=num_threads)
         ax = f1.add_subplot(n_per_axis,n_per_axis,i+1)
+        ax2 = f2.add_subplot(n_per_axis,n_per_axis,i+1)
+
         #tecs = [tec for (_,tec,_) in res]
         ax.plot(freqs,phase[i,:,start_time:stop_time])
+        t = 0
+        for tec,cs in res:
+            ax.plot(freqs,np.angle(np.exp(1j*calc_phase(tec,freqs,cs=cs))),ls='--',lw=2.)
+            ax2.scatter(t,cs)
+            t += 1
+        ax2.set_xlabel("time")
+        ax2.set_ylabel("scalar phase")
+        ax.set_ylim([-np.pi,np.pi])
+        ax.set_xlabel("Freq")
+        ax.set_ylabel("Phase [rad]")
+        if ants is not None:
+            ax.set_title(str_(ants[i]))
+            ax2.set_title(str_(ants[i]))
         #ax.plot(times[start_time:stop_time], tecs)
+    plt.tight_layout()
     plt.show()
 
 def solve_patch(name, obj, freqs = None, data_dict=None, start_time=0, stop_time=49, reference_ant = 'CS005HBA0',num_threads = None):
@@ -126,5 +145,22 @@ def solve_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_
     else:
         datapack.save(datapack_file)
 
+def plot_dtec(data_file,datapack_file=None,start_time=0,stop_time=-1,reference_antenna='CS005HBA0',num_threads = None):
+    '''Create the datapack of the entire observation stored in data_file.
+    data_file is created by the transfer2hdf5 program which turns a facet
+    calibration into managable data format. 
+    Creates a datapack in the same directory unless datapack_file is given.
+    start_time, end_time give the indices along timeaxis to do solve on.
+    Use 0 and -1 for full time. Reference_antenna is the name of lofar 
+    station to use as reference.'''
+    from ionotomo.astro.real_data import DataPack
+    from ionotomo.astro.radio_array import RadioArray
+    h = h5py.File(data_file,'r')
+    freqs = h['freq'][...]
+    ants = h['ant'][...]
+    from functools import partial
+    h.visititems(partial(plot_along_time,freqs=freqs,start_time=start_time,stop_time=stop_time,num_threads=num_threads,ants = ants))
+
 if __name__=='__main__':
-    solve_dtec('../../goods-n.hdf5',start_time=0,stop_time=20,num_threads = 16)    
+    #solve_dtec('../../goods-n.hdf5',start_time=0,stop_time=20,num_threads = 16)   
+    plot_dtec('../../goods-n.hdf5',start_time=0,stop_time=16,num_threads = 16)

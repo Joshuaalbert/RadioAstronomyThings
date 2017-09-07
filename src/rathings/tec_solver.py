@@ -27,6 +27,7 @@ def robust_l2(obs_phase, freqs, solve_cs=True):
     `solve_cs` : (optional) bool
         Whether to solve cs (True)
     '''
+    obs_phase = phase_unwrapp1d(obs_phase)
     if solve_cs:
         def residuals(m, freqs, obs_phase):
             tec,cs = m[0],m[1]
